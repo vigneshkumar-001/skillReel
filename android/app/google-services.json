@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "712555540735",
+    "project_id": "skillreal-1e664",
+    "storage_bucket": "skillreal-1e664.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:712555540735:android:9315f55aeba561adfa5cca",
+        "android_client_info": {
+          "package_name": "com.feni.skilreel_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCD-7hae18Sv3QesK4FbNLRwUrt74cMa_Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

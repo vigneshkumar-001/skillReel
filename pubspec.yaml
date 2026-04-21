@@ -1,0 +1,67 @@
+name: skilreel_app
+description: Service marketplace + reels discovery platform
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^13.2.0
+
+  # HTTP
+  dio: ^5.4.3
+
+  # Local storage
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.3
+
+  # Sockets
+  socket_io_client: ^2.0.3+1
+
+  # Media
+  video_player: ^2.8.6
+  image_picker: ^1.0.7
+  cached_network_image: ^3.3.1
+
+  # UI
+  shimmer: ^3.0.0
+  flutter_svg: ^2.0.10+1
+  timeago: ^3.6.1
+  intl: ^0.19.0
+  share_plus: ^10.0.2
+  logging: ^1.2.0
+  logger: ^2.4.0
+  geocoding: ^3.0.0
+ 
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Location
+  geolocator: ^11.0.0
+  video_compress: ^3.1.4
+  file_picker: ^11.0.2
+  firebase_core: ^4.6.0
+  firebase_crashlytics: ^5.1.0
+  firebase_messaging: ^16.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.9
+  riverpod_generator: ^2.3.11
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
