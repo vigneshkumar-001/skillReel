@@ -16,6 +16,7 @@ class ProviderModel {
   final bool isActive;
   final double trustScore;
   final bool callEnabled;
+  final bool isCurrentProvider;
 
   ProviderModel({
     required this.id,
@@ -35,6 +36,7 @@ class ProviderModel {
     required this.isActive,
     required this.trustScore,
     required this.callEnabled,
+    this.isCurrentProvider = false,
   });
 
   factory ProviderModel.fromJson(Map<String, dynamic> j) {
@@ -67,6 +69,7 @@ class ProviderModel {
       isActive: j['isActive'] ?? true,
       trustScore: (j['trustScore'] ?? 0).toDouble(),
       callEnabled: j['callEnabled'] ?? true,
+      isCurrentProvider: j['isCurrentProvider'] ?? false,
     );
   }
 

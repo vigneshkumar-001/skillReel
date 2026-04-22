@@ -15,6 +15,7 @@ class _MyEnquiriesScreenState extends State<MyEnquiriesScreen> {
   List<dynamic> _enquiries = [];
   bool _loading = true;
   Object? _error;
+  String _statusFilter = 'all';
 
   @override
   void initState() {
@@ -41,13 +42,14 @@ class _MyEnquiriesScreenState extends State<MyEnquiriesScreen> {
   Widget build(BuildContext context) {
     final useFallbackData = _error != null && _enquiries.isEmpty;
     final listRaw = useFallbackData ? _demoEnquiries : _enquiries;
-    final list = listRaw;
+    final list = _applyStatusFilter(listRaw, _statusFilter);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         const hPad = 16.0;
 
         return Scaffold(
+          backgroundColor: AppColors.bg,
           body: RefreshIndicator(
             onRefresh: _load,
             child: CustomScrollView(
@@ -105,6 +107,16 @@ class _MyEnquiriesScreenState extends State<MyEnquiriesScreen> {
                           ),
                         ),
                       ),
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(hPad, 10, hPad, 10),
+                    child: _StatusFilters(
+                      selected: _statusFilter,
+                      onChanged: (v) => setState(() => _statusFilter = v),
+                      counts: _statusCounts(listRaw),
                     ),
                   ),
                 ),
@@ -179,13 +191,15 @@ class _MyEnquiriesScreenState extends State<MyEnquiriesScreen> {
                           final e = list[index];
                           final status = (e['status'] ?? 'new').toString();
                           final card = _EnquiryCard(
-                            message: (e['message'] ?? e['title'] ?? '').toString(),
+                            message:
+                                (e['message'] ?? e['title'] ?? '').toString(),
                             status: status,
-                            createdAt:
-                                (e['createdAt'] ?? e['created'] ?? '').toString(),
-                            providerName:
-                                (e['providerName'] ?? e['provider'] ?? 'Provider')
-                                    .toString(),
+                            createdAt: (e['createdAt'] ?? e['created'] ?? '')
+                                .toString(),
+                            providerName: (e['providerName'] ??
+                                    e['provider'] ??
+                                    'Provider')
+                                .toString(),
                           );
 
                           return Padding(
@@ -203,6 +217,142 @@ class _MyEnquiriesScreenState extends State<MyEnquiriesScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+List<dynamic> _applyStatusFilter(List<dynamic> list, String key) {
+  final k = key.trim().toLowerCase();
+  if (k.isEmpty || k == 'all') return list;
+  String norm(String? s) {
+    final v = (s ?? '').trim().toLowerCase();
+    if (v == 'in_progress') return 'in progress';
+    if (v == 'inprogress') return 'in progress';
+    return v;
+  }
+
+  return list.where((e) {
+    if (e is! Map) return true;
+    final status = norm(e['status']?.toString());
+    return status == k;
+  }).toList(growable: false);
+}
+
+Map<String, int> _statusCounts(List<dynamic> list) {
+  final out = <String, int>{
+    'all': list.length,
+    'new': 0,
+    'confirmed': 0,
+    'in progress': 0,
+    'closed': 0,
+  };
+  String norm(String? s) {
+    final v = (s ?? '').trim().toLowerCase();
+    if (v == 'in_progress') return 'in progress';
+    if (v == 'inprogress') return 'in progress';
+    return v;
+  }
+
+  for (final e in list) {
+    if (e is! Map) continue;
+    final status = norm(e['status']?.toString());
+    if (out.containsKey(status)) out[status] = (out[status] ?? 0) + 1;
+  }
+  return out;
+}
+
+class _StatusFilters extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onChanged;
+  final Map<String, int> counts;
+
+  const _StatusFilters({
+    required this.selected,
+    required this.onChanged,
+    required this.counts,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = const <String>[
+      'all',
+      'new',
+      'confirmed',
+      'in progress',
+      'closed',
+    ];
+
+    String labelOf(String key) {
+      switch (key) {
+        case 'all':
+          return 'All';
+        case 'in progress':
+          return 'In progress';
+        default:
+          return key[0].toUpperCase() + key.substring(1);
+      }
+    }
+
+    final sel = selected.trim().toLowerCase();
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemBuilder: (context, i) {
+          final k = items[i];
+          final isSelected = sel == k;
+          final n = counts[k] ?? 0;
+          return _FilterPill(
+            label: '${labelOf(k)}${k == 'all' ? '' : ' ($n)'}',
+            selected: isSelected,
+            onTap: () => onChanged(k),
+          );
+        },
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemCount: items.length,
+      ),
+    );
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? Colors.white : AppColors.textPrimary;
+    return Material(
+      color: selected ? AppColors.textPrimary : AppColors.surface,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? Colors.transparent : AppColors.border,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: fg,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -267,7 +417,8 @@ class _EnquiryCard extends StatelessWidget {
 
   Color get _statusColor {
     final s = status.trim().toLowerCase();
-    if (s.contains('accept') || s.contains('approved')) return AppColors.secondary;
+    if (s.contains('accept') || s.contains('approved'))
+      return AppColors.secondary;
     if (s.contains('reject') || s.contains('declin') || s.contains('cancel')) {
       return AppColors.error;
     }
@@ -352,7 +503,10 @@ class _EnquiryCard extends StatelessWidget {
                 height: 3,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [c.withAlpha(190), AppColors.primary.withAlpha(160)],
+                    colors: [
+                      c.withAlpha(190),
+                      AppColors.primary.withAlpha(160)
+                    ],
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                   ),

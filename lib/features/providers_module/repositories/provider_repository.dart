@@ -1,10 +1,83 @@
 import 'package:dio/dio.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/constants/api_constants.dart';
+import '../../../core/network/models/my_provider_photos_model.dart';
+import '../../../core/network/models/my_provider_reels_model.dart';
 import '../models/provider_model.dart';
 
 class ProviderRepository {
   final _api = ApiClient.instance;
+
+  Future<Map<String, dynamic>> getProviderOverviewJson(String id) async {
+    final cleanId = id.trim();
+    if (cleanId.isEmpty) {
+      throw ArgumentError.value(id, 'id', 'Provider id cannot be empty');
+    }
+
+    final res = await _api.get('${ApiConstants.userProviderOverview}/$cleanId');
+    final root = res.data;
+    final data = (root is Map) ? root['data'] : null;
+    if (data is! Map) {
+      throw StateError('Unexpected userproviders response');
+    }
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<MyProviderReelsResponse> getProviderReels({
+    required String providerId,
+    String? cursor,
+    int limit = 12,
+  }) async {
+    final cleanId = providerId.trim();
+    if (cleanId.isEmpty) {
+      throw ArgumentError.value(
+        providerId,
+        'providerId',
+        'Provider id cannot be empty',
+      );
+    }
+
+    final res = await _api.get(
+      '${ApiConstants.userProviderOverview}/$cleanId/reels',
+      params: <String, dynamic>{
+        if (cursor != null) 'cursor': cursor,
+        'limit': limit,
+      },
+    );
+    final root = res.data;
+    if (root is! Map) {
+      throw StateError('Unexpected userproviders reels response');
+    }
+    return MyProviderReelsResponse.fromJson(Map<String, dynamic>.from(root));
+  }
+
+  Future<MyProviderPhotosResponse> getProviderPhotos({
+    required String providerId,
+    String? cursor,
+    int limit = 12,
+  }) async {
+    final cleanId = providerId.trim();
+    if (cleanId.isEmpty) {
+      throw ArgumentError.value(
+        providerId,
+        'providerId',
+        'Provider id cannot be empty',
+      );
+    }
+
+    final res = await _api.get(
+      '${ApiConstants.userProviderOverview}/$cleanId/photos',
+      params: <String, dynamic>{
+        if (cursor != null) 'cursor': cursor,
+        'limit': limit,
+      },
+    );
+    final root = res.data;
+    if (root is! Map) {
+      throw StateError('Unexpected userproviders photos response');
+    }
+    return MyProviderPhotosResponse.fromJson(Map<String, dynamic>.from(root));
+  }
 
   Future<Map<String, dynamic>> getMyProviderProfileJson() async {
     try {

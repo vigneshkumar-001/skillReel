@@ -19,7 +19,7 @@ class ApiConstants {
 
   // Users
   static const String me = '/users/me';
-  static const String updateProfile = '/users/me/profile';
+  static const String updateProfile = '/a/me/profile';
 
   // Providers
   static const String becomeProvider = '/providers/become';
@@ -65,4 +65,7 @@ class ApiConstants {
 
   // Interactions (single endpoint)
   static const String interactions = '/app/social/interactions';
+
+  // Push notifications
+  static const String pushToken = '/app/social/notifications/push-token';
 }

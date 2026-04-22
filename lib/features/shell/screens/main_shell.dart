@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../reels/providers/reels_viewer_provider.dart';
+import '../../../core/notifications/permission/notification_permission_banner.dart';
 
 class MainShell extends ConsumerWidget {
   final Widget child;
@@ -65,15 +66,31 @@ class MainShell extends ConsumerWidget {
     final isFullScreenRoute = loc.startsWith('/chat/') ||
         loc.startsWith('/user/') ||
         loc.startsWith('/provider/') ||
-        loc.startsWith('/profile/view');
+        loc.startsWith('/profile/view') ||
+        loc.startsWith('/profile/edit') ||
+        loc.startsWith('/profile/saved') ||
+        loc.startsWith('/notifications') ||
+        loc.startsWith('/enquiries/mine');
     if (isFullScreenRoute) {
       // Some routes should be full-screen (no bottom tabs).
-      return Scaffold(body: child);
+      return Scaffold(
+        body: Stack(
+          children: [
+            child,
+            const NotificationPermissionBanner(),
+          ],
+        ),
+      );
     }
 
     return Scaffold(
       extendBody: true,
-      body: child,
+      body: Stack(
+        children: [
+          child,
+          const NotificationPermissionBanner(),
+        ],
+      ),
       bottomNavigationBar: _GlassBottomNav(
         child: NavigationBarTheme(
           data: NavigationBarThemeData(

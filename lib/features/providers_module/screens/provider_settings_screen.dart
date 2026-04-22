@@ -9,6 +9,7 @@ import '../../../core/network/api_error_message.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../../skills/widgets/skill_picker_bottom_sheet.dart';
 import '../providers/provider_state_provider.dart';
 
@@ -44,9 +45,126 @@ class _ProviderSettingsScreenState
 
   bool _loading = false;
   bool _submitted = false;
+  bool _prefilled = false;
+  ProviderSubscription<AsyncValue<Map<String, dynamic>>>? _profileSub;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _profileSub = ref.listenManual<AsyncValue<Map<String, dynamic>>>(
+      myProfileProvider,
+      (_, next) {
+        final user = next.valueOrNull;
+        if (user == null || _prefilled) return;
+
+        // Prefill "Become a Provider" form from existing profile info.
+        _prefilled = true;
+        _prefillFromProfile(user);
+        if (mounted) setState(() {});
+      },
+    );
+
+    // In edit mode, also attempt to load the existing provider profile so the
+    // user can update it without re-typing everything.
+    if (widget.mode == ProviderSettingsMode.edit) {
+      Future<void>(() async {
+        try {
+          final p = await ref.read(providerActionProvider).getMyProviderProfileJson();
+          if (!mounted) return;
+          _prefillFromProvider(p);
+          setState(() {});
+        } catch (_) {
+          // Ignore: screen can still be used to create/update.
+        }
+      });
+    }
+  }
+
+  void _prefillFromProfile(Map<String, dynamic> user) {
+    if (_displayName.text.trim().isEmpty) {
+      _displayName.text = (user['name'] ?? '').toString();
+    }
+    if (_bio.text.trim().isEmpty) {
+      _bio.text = (user['bio'] ?? '').toString();
+    }
+
+    final provider = user['provider'];
+    if (provider is Map) {
+      if (provider['callEnabled'] is bool) _callEnabled = provider['callEnabled'] as bool;
+      if (provider['chatOnlyMode'] is bool) _chatOnlyMode = provider['chatOnlyMode'] as bool;
+    }
+
+    final loc = user['location'];
+    if (loc is Map) {
+      _city.text = (loc['city'] ?? _city.text).toString();
+      _state.text = (loc['state'] ?? _state.text).toString();
+      _country.text = (loc['country'] ?? _country.text).toString();
+      final lat = loc['lat'];
+      final lng = loc['lng'];
+      if (_lat.text.trim().isEmpty && lat != null) _lat.text = lat.toString();
+      if (_lng.text.trim().isEmpty && lng != null) _lng.text = lng.toString();
+    }
+  }
+
+  void _prefillFromProvider(Map<String, dynamic> provider) {
+    // Accept either {profile:{...}} or a plain provider object.
+    final rootProfile = provider['profile'];
+    final p = rootProfile is Map ? rootProfile : provider;
+
+    if (_displayName.text.trim().isEmpty) {
+      _displayName.text = (p['displayName'] ?? '').toString();
+    }
+    if (_bio.text.trim().isEmpty) {
+      _bio.text = (p['bio'] ?? '').toString();
+    }
+    if (_experienceYears.text.trim().isEmpty) {
+      final v = p['experienceYears'];
+      if (v != null) _experienceYears.text = v.toString();
+    }
+    if (_serviceRadiusKm.text.trim().isEmpty) {
+      final v = p['serviceRadiusKm'];
+      if (v != null) _serviceRadiusKm.text = v.toString();
+    }
+
+    final loc = p['location'];
+    if (loc is Map) {
+      if (_city.text.trim().isEmpty) _city.text = (loc['city'] ?? '').toString();
+      if (_state.text.trim().isEmpty) _state.text = (loc['state'] ?? '').toString();
+      if (_country.text.trim().isEmpty) _country.text = (loc['country'] ?? '').toString();
+      if (_lat.text.trim().isEmpty && loc['lat'] != null) _lat.text = loc['lat'].toString();
+      if (_lng.text.trim().isEmpty && loc['lng'] != null) _lng.text = loc['lng'].toString();
+    }
+
+    final comm = p['communication'];
+    if (comm is Map) {
+      if (comm['callEnabled'] is bool) _callEnabled = comm['callEnabled'] as bool;
+      if (comm['chatOnlyMode'] is bool) _chatOnlyMode = comm['chatOnlyMode'] as bool;
+    } else {
+      if (p['callEnabled'] is bool) _callEnabled = p['callEnabled'] as bool;
+      if (p['chatOnlyMode'] is bool) _chatOnlyMode = p['chatOnlyMode'] as bool;
+    }
+
+    final rawSkills = p['skills'];
+    if (_skillsById.isEmpty && rawSkills is List) {
+      final next = <String, String>{};
+      for (final s in rawSkills) {
+        if (s is String) {
+          final id = s.trim();
+          if (id.isNotEmpty) next[id] = '';
+        } else if (s is Map) {
+          final id = (s['id'] ?? s['_id'] ?? '').toString().trim();
+          final name = (s['name'] ?? '').toString().trim();
+          if (id.isNotEmpty) next[id] = name;
+        }
+      }
+      if (next.isNotEmpty) _skillsById = next;
+    }
+  }
 
   @override
   void dispose() {
+    _profileSub?.close();
     _displayName.dispose();
     _bio.dispose();
     _experienceYears.dispose();
@@ -266,9 +384,7 @@ class _ProviderSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final title = widget.mode == ProviderSettingsMode.create
-        ? 'Become a Provider'
-        : 'Provider settings';
+    final title = 'Become a Provider';
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: Form(

@@ -15,6 +15,13 @@ import '../../reels/models/reel_model.dart';
 import '../models/search_category_model.dart';
 import '../providers/search_provider.dart';
 
+class _SearchPalette {
+  // Match the warm premium system used in `profile_screen.dart`.
+  static const bg = Color(0xFFFBF7F1);
+  static const surfaceTint = Color(0xFFFCF8F2);
+  static const border = Color(0xFFEAE2D7);
+}
+
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -26,6 +33,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _ctrl = TextEditingController();
   Timer? _debounce;
   bool _didResetOnOpen = false;
+
+  Future<void> _refresh() async {
+    HapticFeedback.selectionClick();
+    ref.invalidate(searchCategoriesProvider);
+    ref.invalidate(searchResultsProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
 
   void _search(String q) {
     ref.read(searchQueryProvider.notifier).state = q.trim();
@@ -65,65 +79,61 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final bottomPad = MediaQuery.of(context).padding.bottom + 120;
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: ScrollConfiguration(
-        behavior: const _BouncyScrollBehavior(),
-        child: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              backgroundColor: AppColors.bg,
-              surfaceTintColor: Colors.transparent,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              titleSpacing: 16,
-              title: const Text(
-                'Search',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(66),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                  child: _SearchBar(
-                    controller: _ctrl,
-                    onChanged: _setQuery,
-                    onSubmitted: _search,
-                    onClear: () {
-                      HapticFeedback.selectionClick();
-                      _debounce?.cancel();
-                      _ctrl.clear();
-                      ref.read(searchQueryProvider.notifier).state = '';
-                      FocusScope.of(context).unfocus();
-                    },
+      backgroundColor: _SearchPalette.bg,
+      body: RefreshIndicator.adaptive(
+        onRefresh: _refresh,
+        notificationPredicate: (n) => n.depth == 0,
+        child: ScrollConfiguration(
+          behavior: const _BouncyScrollBehavior(),
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: _SearchPalette.bg,
+                surfaceTintColor: Colors.transparent,
+                elevation: 0,
+                scrolledUnderElevation: 0,
+                titleSpacing: 16,
+                title: const Text(
+                  'Search',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(66),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                    child: _SearchBar(
+                      controller: _ctrl,
+                      onChanged: _setQuery,
+                      onSubmitted: _search,
+                      onClear: () {
+                        HapticFeedback.selectionClick();
+                        _debounce?.cancel();
+                        _ctrl.clear();
+                        ref.read(searchQueryProvider.notifier).state = '';
+                        FocusScope.of(context).unfocus();
+                      },
+                    ),
                   ),
                 ),
               ),
-            ),
-            if (q.isEmpty) ...[
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16, 10),
-                  child: _SectionHeader(
-                    title: 'Explore',
-                    subtitle: 'Browse by category',
+              if (q.isEmpty) ...[
+                const SliverToBoxAdapter(child: SizedBox(height: 10)),
+                _ExploreCategoriesSliver(bottomPad: bottomPad),
+              ] else ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                    child: _SectionHeader(
+                      title: 'Results',
+                      subtitle: 'for "$q"',
+                    ),
                   ),
                 ),
-              ),
-              _ExploreCategoriesSliver(bottomPad: bottomPad),
-            ] else ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-                  child: _SectionHeader(
-                    title: 'Results',
-                    subtitle: 'for “$q”',
-                  ),
-                ),
-              ),
-              _SearchResultsSliver(query: q, bottomPad: bottomPad),
+                _SearchResultsSliver(query: q, bottomPad: bottomPad),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -166,9 +176,8 @@ class _SearchBarState extends State<_SearchBar> {
 
   @override
   Widget build(BuildContext context) {
-    final shadowColor = _focused
-        ? AppColors.primary.withAlpha(12)
-        : Colors.black.withAlpha(10);
+    final shadowColor =
+        _focused ? AppColors.primary.withAlpha(12) : Colors.black.withAlpha(10);
 
     return Container(
       decoration: BoxDecoration(
@@ -259,23 +268,13 @@ class _ExploreCategoriesSliver extends ConsumerWidget {
     return catsAsync.when(
       loading: () => SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _MiniHeader(title: 'Categories'),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 176,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: 6,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (_, __) => const _CategorySkeleton(),
-                ),
-              ),
+              const _PopularHeaderRow(),
               const SizedBox(height: 14),
-              const _GridSkeleton(count: 9),
+              const _PopularGridSkeleton(count: 6),
               SizedBox(height: bottomPad),
             ],
           ),
@@ -286,7 +285,7 @@ class _ExploreCategoriesSliver extends ConsumerWidget {
           padding: EdgeInsets.fromLTRB(16, 10, 16, bottomPad),
           child: _InlineState(
             icon: Icons.wifi_off_rounded,
-            title: 'Couldn’t load categories',
+            title: 'Couldn\'t load categories',
             subtitle: apiErrorMessage(e),
           ),
         ),
@@ -294,23 +293,14 @@ class _ExploreCategoriesSliver extends ConsumerWidget {
       data: (cats) {
         final categories =
             cats.where((c) => c.category.trim().isNotEmpty).toList();
-        final selectedKey = ref.watch(selectedSearchCategoryProvider);
 
-        if (selectedKey == null && categories.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            ref.read(selectedSearchCategoryProvider.notifier).state =
-                categories.first.category.trim();
-          });
-        }
-
-        final activeKey = (selectedKey ??
-                (categories.isNotEmpty ? categories.first.category : ''))
-            .trim();
-        final activeLabel = activeKey;
+        final popular = List<SearchCategoryModel>.from(categories)
+          ..sort((a, b) => b.skills.compareTo(a.skills));
+        final popularShown = popular.take(6).toList(growable: false);
 
         return SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -320,41 +310,35 @@ class _ExploreCategoriesSliver extends ConsumerWidget {
                     title: 'No categories',
                     subtitle: 'Try again in a moment.',
                   )
-                else
-                  ...[
-                    const _MiniHeader(title: 'Categories'),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 176,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: categories.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 10),
-                        itemBuilder: (context, i) {
-                          final c = categories[i];
-                          final isSelected = c.category.trim() == activeKey;
-                          return _CategoryChip(
-                            category: c,
-                            selected: isSelected,
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              ref.read(selectedSearchCategoryProvider.notifier)
-                                  .state = c.category.trim();
-                              context.push(
-                                '/search/category/${Uri.encodeComponent(c.category.trim())}',
-                                extra: c.category.trim(),
-                              );
-                            },
+                else ...[
+                  const _PopularHeaderRow(),
+                  const SizedBox(height: 14),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: popularShown.length,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 18,
+                      mainAxisSpacing: 18,
+                      childAspectRatio: 0.76,
+                    ),
+                    itemBuilder: (context, i) {
+                      final c = popularShown[i];
+                      return _PopularCategoryCard(
+                        category: c,
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          context.push(
+                            '/search/category/${Uri.encodeComponent(c.category.trim())}',
+                            extra: c.category.trim(),
                           );
                         },
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    _CategoryReelsGrid(
-                      categoryId: activeKey,
-                      categoryLabel: activeLabel,
-                    ),
-                  ],
+                      );
+                    },
+                  ),
+                ],
                 SizedBox(height: bottomPad),
               ],
             ),
@@ -365,52 +349,142 @@ class _ExploreCategoriesSliver extends ConsumerWidget {
   }
 }
 
-class _CategoryReelsGrid extends ConsumerWidget {
-  final String categoryId;
-  final String categoryLabel;
-  const _CategoryReelsGrid({
-    required this.categoryId,
-    required this.categoryLabel,
+class _PopularHeaderRow extends StatelessWidget {
+  const _PopularHeaderRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Expanded(
+          child: Text(
+            'Popular',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 38,
+              color: AppColors.textPrimary,
+              height: 1.0,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PopularGridSkeleton extends StatelessWidget {
+  final int count;
+  const _PopularGridSkeleton({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: count,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 18,
+        mainAxisSpacing: 18,
+        childAspectRatio: 0.76,
+      ),
+      itemBuilder: (_, __) => Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBF5),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: _SearchPalette.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(8),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: const Center(child: CupertinoActivityIndicator(radius: 12)),
+      ),
+    );
+  }
+}
+
+class _PopularCategoryCard extends StatelessWidget {
+  final SearchCategoryModel category;
+  final VoidCallback onTap;
+
+  const _PopularCategoryCard({
+    required this.category,
+    required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (categoryId.trim().isEmpty) {
-      return const _InlineState(
-        icon: Icons.play_circle_outline_rounded,
-        title: 'Pick a category',
-        subtitle: 'We’ll show reels here.',
-      );
-    }
+  Widget build(BuildContext context) {
+    final img = UrlUtils.normalizeMediaUrl(category.imageUrl ?? '').trim();
+    final title = category.category.trim().isEmpty
+        ? 'Category'
+        : category.category.trim();
 
-    final reelsAsync = ref.watch(searchCategoryReelsProvider(categoryId.trim()));
-    return reelsAsync.when(
-      loading: () => const _GridSkeleton(count: 9),
-      error: (e, _) => _InlineState(
-        icon: Icons.error_outline_rounded,
-        title: 'Couldn’t load reels',
-        subtitle: apiErrorMessage(e),
-      ),
-      data: (reels) {
-        if (reels.isEmpty) return const SizedBox.shrink();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Stack(
           children: [
-            _MiniHeader(title: categoryLabel.trim().isEmpty ? 'Reels' : categoryLabel.trim()),
-            const SizedBox(height: 10),
-            _ReelsGrid(
-              reels: reels,
-              onTapReel: (reel) {
-                HapticFeedback.selectionClick();
-                final feedType =
-                    'search_category:${Uri.encodeComponent(categoryId.trim())}';
-                context.push('/reel/${reel.id}', extra: feedType);
-              },
+            Positioned.fill(
+              child: img.isEmpty
+                  ? ColoredBox(
+                      color: _SearchPalette.surfaceTint,
+                      child: Center(
+                        child: Icon(
+                          Icons.category_outlined,
+                          size: 64,
+                          color: AppColors.textSecondary.withAlpha(170),
+                        ),
+                      ),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: img,
+                      fit: BoxFit.cover,
+                      fadeInDuration: const Duration(milliseconds: 120),
+                      placeholder: (_, __) => const SizedBox.shrink(),
+                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.transparent,
+                      Colors.black.withAlpha(150),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 14,
+              child: Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  height: 1.05,
+                ),
+              ),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -463,7 +537,11 @@ class _SearchResultsSliver extends ConsumerWidget {
                       provider: p,
                       onTap: () {
                         HapticFeedback.selectionClick();
-                        context.push('/provider/${p.id}');
+                        if (p.isCurrentProvider) {
+                          context.push('/profile/view');
+                          return;
+                        }
+                        context.push('/user/${p.id}');
                       },
                     ),
                     const SizedBox(height: 10),
@@ -605,10 +683,9 @@ class _ReelThumbTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final thumb = (reel.thumbnailUrl.isNotEmpty
-            ? reel.thumbnailUrl
-            : reel.mediaUrl)
-        .trim();
+    final thumb =
+        (reel.thumbnailUrl.isNotEmpty ? reel.thumbnailUrl : reel.mediaUrl)
+            .trim();
     final url = UrlUtils.normalizeMediaUrl(thumb);
     final showPlaceholder = url.isEmpty || _looksLikeVideoUrl(url);
 
@@ -818,190 +895,6 @@ class _MiniHeader extends StatelessWidget {
       style: const TextStyle(
         fontWeight: FontWeight.w900,
         color: AppColors.textPrimary,
-      ),
-    );
-  }
-}
-
-class _CategoryChip extends StatelessWidget {
-  final SearchCategoryModel category;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _CategoryChip({
-    required this.category,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final img = UrlUtils.normalizeMediaUrl(category.imageUrl);
-    final label = category.category.trim();
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      width: 124,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: selected
-                ? AppColors.accent.withAlpha(26)
-                : Colors.black.withAlpha(10),
-            blurRadius: selected ? 20 : 16,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        const Color(0xFF111827).withAlpha(230),
-                        AppColors.primary.withAlpha(22),
-                        AppColors.secondary.withAlpha(18),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (img.isNotEmpty)
-                Positioned.fill(
-                  child: CachedNetworkImage(
-                    imageUrl: img,
-                    fit: BoxFit.cover,
-                    fadeInDuration: const Duration(milliseconds: 120),
-                    placeholder: (_, __) => const SizedBox.shrink(),
-                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                  ),
-                ),
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withAlpha(70),
-                        Colors.transparent,
-                        Colors.black.withAlpha(180),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (selected)
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 8,
-                  child: Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFF7675), Color(0xFF6C5CE7)],
-                      ),
-                    ),
-                  ),
-                ),
-              Positioned(
-                left: 10,
-                right: 10,
-                bottom: 10,
-                child: Text(
-                  label.isEmpty ? 'Category' : label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    height: 1.1,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CategorySkeleton extends StatelessWidget {
-  const _CategorySkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 124,
-      padding: const EdgeInsets.all(0),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(10),
-            blurRadius: 16,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: const ColoredBox(
-          color: AppColors.surface,
-          child: Center(child: CupertinoActivityIndicator(radius: 12)),
-        ),
-      ),
-    );
-  }
-}
-
-class _GridSkeleton extends StatelessWidget {
-  final int count;
-  const _GridSkeleton({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: count,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.63,
-      ),
-      itemBuilder: (_, __) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(8),
-              blurRadius: 14,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: CupertinoActivityIndicator(radius: 12),
-        ),
       ),
     );
   }

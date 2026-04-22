@@ -7,6 +7,8 @@ plugins {
 
 dependencies {
     implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2")
+    // Required by flutter_local_notifications (uses Java 8+ APIs on some devices).
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 // Firebase / Google Services (optional in dev builds).
@@ -24,6 +26,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {

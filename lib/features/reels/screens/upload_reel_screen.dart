@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:go_router/go_router.dart';
@@ -1237,26 +1238,13 @@ class _UploadReelScreenState extends ConsumerState<UploadReelScreen> {
       final sizeLabel =
           _selectedFileSizeLabel ?? await _fileSizeLabel(_filePath!);
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (dialogCtx) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text('Uploaded'),
-          content: Text(
-            'Your post is uploaded successfully.\n\nUploaded at: $uploadedAtLabel\nFile size: $sizeLabel',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+      final close = await _showUploadSuccess(
+        uploadedAtLabel: uploadedAtLabel,
+        sizeLabel: sizeLabel,
+        isVideo: _mediaType == 'video',
       );
       if (!mounted) return;
-      context.pop();
+      if (close) context.pop();
     } on DioException catch (e) {
       final status = e.response?.statusCode;
       String message = e.message ?? 'Upload failed';
@@ -1303,6 +1291,37 @@ class _UploadReelScreenState extends ConsumerState<UploadReelScreen> {
         });
       }
     }
+  }
+
+  Future<bool> _showUploadSuccess({
+    required String uploadedAtLabel,
+    required String sizeLabel,
+    required bool isVideo,
+  }) async {
+    if (!mounted) return true;
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withAlpha(120),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: _UploadSuccessSheet(
+            isVideo: isVideo,
+            uploadedAtLabel: uploadedAtLabel,
+            sizeLabel: sizeLabel,
+            onDone: () => Navigator.of(ctx).pop(true),
+            onUploadAnother: () => Navigator.of(ctx).pop(false),
+          ),
+        ),
+      ),
+    );
+
+    // Default to closing the upload screen if the user dismisses the sheet.
+    return result ?? true;
   }
 
   Future<void> _compressForUploadIfNeeded() async {
@@ -4457,6 +4476,223 @@ class _EditorToolButton extends StatelessWidget {
               color: enabled ? Colors.white : Colors.white54,
               fontWeight: FontWeight.w800,
               fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UploadSuccessSheet extends StatelessWidget {
+  final bool isVideo;
+  final String uploadedAtLabel;
+  final String sizeLabel;
+  final VoidCallback onDone;
+  final VoidCallback onUploadAnother;
+
+  const _UploadSuccessSheet({
+    required this.isVideo,
+    required this.uploadedAtLabel,
+    required this.sizeLabel,
+    required this.onDone,
+    required this.onUploadAnother,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.96, end: 1.0),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) {
+        return Transform.scale(
+          scale: t,
+          child: Opacity(opacity: t, child: child),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: AppColors.border.withAlpha(140)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x22000000),
+              blurRadius: 34,
+              offset: Offset(0, 18),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.primary, AppColors.accent],
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withAlpha(36),
+                        blurRadius: 22,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    color: Colors.white,
+                    size: 34,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  isVideo ? 'Video uploaded' : 'Uploaded',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 18,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Your post is live and ready to view.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _SuccessMetaRow(
+                  icon: Icons.schedule_rounded,
+                  label: 'Uploaded at',
+                  value: uploadedAtLabel,
+                ),
+                const SizedBox(height: 10),
+                _SuccessMetaRow(
+                  icon: Icons.sd_storage_rounded,
+                  label: 'File size',
+                  value: sizeLabel,
+                ),
+                const SizedBox(height: 14),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          onUploadAnother();
+                        },
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text(
+                          'Upload another',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          onDone();
+                        },
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text(
+                          'Done',
+                          style: TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SuccessMetaRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _SuccessMetaRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withAlpha(12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

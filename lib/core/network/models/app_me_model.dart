@@ -53,6 +53,7 @@ class AppMeUnifiedProfile {
   final String initials;
   final String headline;
   final String bio;
+  final String websiteUrl;
   final List<AppMeSkillLite> skills;
   final AppMeLocation location;
   final int serviceRadiusKm;
@@ -75,6 +76,7 @@ class AppMeUnifiedProfile {
     required this.initials,
     required this.headline,
     required this.bio,
+    required this.websiteUrl,
     required this.skills,
     required this.location,
     required this.serviceRadiusKm,
@@ -99,6 +101,7 @@ class AppMeUnifiedProfile {
       initials: (j['initials'] ?? '').toString(),
       headline: (j['headline'] ?? '').toString(),
       bio: (j['bio'] ?? '').toString(),
+      websiteUrl: (j['websiteUrl'] ?? '').toString(),
       skills: _asList(j['skills'])
           .map((e) => AppMeSkillLite.fromJson(_asMap(e)))
           .toList(growable: false),
@@ -168,6 +171,8 @@ class AppMeUnifiedProfile {
       initials: '',
       headline: '',
       bio: (provider['bio'] ?? user['bio'] ?? '').toString(),
+      websiteUrl:
+          (provider['websiteUrl'] ?? user['websiteUrl'] ?? '').toString(),
       skills: skills,
       location: location,
       serviceRadiusKm: _asInt(provider['serviceRadiusKm']),
@@ -218,6 +223,7 @@ class AppMeUnifiedProfile {
       'avatar': avatarUrl,
       'headline': computedHeadline,
       'bio': bio,
+      'websiteUrl': websiteUrl,
       'location': {
         'city': location.city,
         'state': location.state,

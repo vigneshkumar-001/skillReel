@@ -23,6 +23,7 @@ class ReelModel {
   final String? providerCity;
   final String? providerState;
   final bool? providerIsVerified;
+  final bool isOwnReel;
 
   ReelModel({
     required this.id,
@@ -47,6 +48,7 @@ class ReelModel {
     this.providerCity,
     this.providerState,
     this.providerIsVerified,
+    this.isOwnReel = false,
   });
 
   factory ReelModel.fromJson(Map<String, dynamic> j) {
@@ -106,6 +108,7 @@ class ReelModel {
           : (j['providerIsVerified'] is bool
               ? j['providerIsVerified'] as bool
               : null),
+      isOwnReel: j['isOwnReel'] == true,
     );
   }
 }

@@ -20,6 +20,8 @@ import '../../../core/services/socket_service.dart';
 import '../../interactions/repositories/interactions_repository.dart';
 import '../../chat/models/chat_header.dart';
 import '../../skills/providers/skills_provider.dart';
+import '../../profile/providers/my_saved_reels_provider.dart';
+import '../../profile/providers/profile_provider.dart';
 import '../../../core/router/route_observer.dart';
 import '../../../core/network/api_error_message.dart';
 import '../../../core/theme/app_colors.dart';
@@ -60,6 +62,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
   static const bool _skipEnquiryApiForNow = true;
   final _pageController = PageController();
   final _videoCtrls = <int, VideoPlayerController>{};
+  final _videoUrlByIndex = <int, String>{};
   final Map<String, TextEditingController> _enquiryCtrls = {};
   final Map<String, FocusNode> _enquiryFocusNodes = {};
   final Set<String> _enquirySendingReelIds = {};
@@ -103,6 +106,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
         if (data == null) return;
         _seedFlagsFromApi(data.reels);
         _maybeLoadMore(data);
+        _syncForNewReels(data.reels);
         _playIndex(_index, data.reels);
       },
     );
@@ -164,6 +168,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.feedType != widget.feedType ||
         oldWidget.boostedOnly != widget.boostedOnly) {
+      unawaited(_disposeAllVideoControllers());
       _sub?.close();
       _sub = ref.listenManual<AsyncValue<ReelsViewerState>>(
         reelsViewerControllerProvider(_config),
@@ -175,6 +180,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
             _pausedByTap = false;
           });
           _maybeLoadMore(data);
+          _syncForNewReels(data.reels);
           _playIndex(0, data.reels);
         },
       );
@@ -211,10 +217,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
     }
     _enquiryCtrls.clear();
     _enquiryFocusNodes.clear();
-    for (final c in _videoCtrls.values) {
-      c.dispose();
-    }
-    _videoCtrls.clear();
+    unawaited(_disposeAllVideoControllers());
     _pageController.dispose();
     super.dispose();
   }
@@ -247,14 +250,62 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
     }
   }
 
+  Future<void> _disposeAllVideoControllers() async {
+    for (final c in _videoCtrls.values) {
+      try {
+        await c.pause();
+      } catch (_) {}
+      await c.dispose();
+    }
+    _videoCtrls.clear();
+    _videoUrlByIndex.clear();
+  }
+
+  void _syncForNewReels(List<ReelModel> reels) {
+    if (reels.isEmpty) {
+      unawaited(_disposeAllVideoControllers());
+      return;
+    }
+    if (_index >= reels.length) {
+      setState(() => _index = reels.length - 1);
+    }
+    unawaited(_disposeVideoControllersOutOfRange(reels.length));
+  }
+
+  Future<void> _disposeVideoControllersOutOfRange(int length) async {
+    final toDispose =
+        _videoCtrls.keys.where((k) => k < 0 || k >= length).toList();
+    for (final k in toDispose) {
+      final c = _videoCtrls.remove(k);
+      _videoUrlByIndex.remove(k);
+      await c?.dispose();
+    }
+  }
+
   Future<void> _ensureVideoController(int index, ReelModel reel) async {
     final isVideo = reel.mediaType.toLowerCase() == 'video';
-    if (!isVideo) return;
-    if (_videoCtrls.containsKey(index)) return;
+    if (!isVideo) {
+      final existing = _videoCtrls.remove(index);
+      _videoUrlByIndex.remove(index);
+      await existing?.dispose();
+      return;
+    }
     final url = reel.mediaUrl.isNotEmpty
         ? reel.mediaUrl
         : (reel.mediaUrls.isNotEmpty ? reel.mediaUrls.first : '');
     if (url.isEmpty) return;
+
+    final existing = _videoCtrls[index];
+    final existingUrl = _videoUrlByIndex[index];
+    if (existing != null && existingUrl == url) return;
+    if (existing != null) {
+      try {
+        await existing.pause();
+      } catch (_) {}
+      _videoCtrls.remove(index);
+      _videoUrlByIndex.remove(index);
+      await existing.dispose();
+    }
 
     try {
       final uri = Uri.tryParse(url);
@@ -263,6 +314,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
       }
       final ctrl = VideoPlayerController.networkUrl(uri);
       _videoCtrls[index] = ctrl;
+      _videoUrlByIndex[index] = url;
       await ctrl.initialize();
       await ctrl.setLooping(true);
       await ctrl.setVolume(_muted ? 0 : 1);
@@ -276,6 +328,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
       }
     } catch (_) {
       final c = _videoCtrls.remove(index);
+      _videoUrlByIndex.remove(index);
       await c?.dispose();
     }
   }
@@ -314,6 +367,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
     final toDispose = _videoCtrls.keys.where((k) => !keep.contains(k)).toList();
     for (final k in toDispose) {
       final c = _videoCtrls.remove(k);
+      _videoUrlByIndex.remove(k);
       await c?.dispose();
     }
   }
@@ -603,6 +657,9 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
             saved: nextSaved,
             surface: _surface,
           );
+
+      ref.invalidate(mySavedReelsProvider);
+      ref.invalidate(myProfileProvider);
     } catch (e) {
       if (!mounted) return;
       if (_saveOpTickByReelId[id] != tick) return;
@@ -1163,7 +1220,9 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
                   final commentCount =
                       stats?.commentCount ?? (reel.comments + localComments);
                   final bottomNavHeight = _bottomNavHeight(context);
+                  final isOwnReel = reel.isOwnReel == true;
                   return _ReelPage(
+                    key: ValueKey(reel.id.isNotEmpty ? reel.id : reel.mediaUrl),
                     reel: reel,
                     video: _videoCtrls[i],
                     muted: _muted,
@@ -1195,17 +1254,23 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
                     },
                     onShareTap: () => _shareReel(reel),
                     onProviderTap: () {
-                      final providerId = reel.providerId;
+                      if (isOwnReel) {
+                        context.push('/profile/view');
+                        return;
+                      }
+                      final providerId = reel.providerId.trim();
                       if (providerId.isEmpty) return;
-                      context.push('/provider/$providerId');
+                      context.push('/user/$providerId');
                     },
                     onFollowTap: () {
+                      if (isOwnReel) return;
                       if (reel.providerId.isEmpty) return;
                       _toggleFollow(reel.providerId);
                     },
                     onEnquirySend: () => _sendEnquiry(reel),
                     resolveSkillTag: resolveSkillTag,
                     showProviderHeader: showProviderHeader,
+                    showFollowButton: !isOwnReel,
                     showEnquiryComposer: showEnquiryComposer,
                   );
                 },
@@ -1388,9 +1453,11 @@ class _ReelPage extends StatelessWidget {
   final VoidCallback onProviderTap;
   final String Function(String) resolveSkillTag;
   final bool showProviderHeader;
+  final bool showFollowButton;
   final bool showEnquiryComposer;
 
   const _ReelPage({
+    super.key,
     required this.reel,
     required this.video,
     required this.muted,
@@ -1418,6 +1485,7 @@ class _ReelPage extends StatelessWidget {
     required this.onProviderTap,
     required this.resolveSkillTag,
     required this.showProviderHeader,
+    required this.showFollowButton,
     required this.showEnquiryComposer,
   });
 
@@ -1435,6 +1503,314 @@ class _ReelPage extends StatelessWidget {
         (isVideo && reel.price != null) ? '₹${reel.price}' : null;
     final tagLabels =
         reel.skillTags.map(resolveSkillTag).toList(growable: false);
+    final cleanPriceLabel = priceLabel?.replaceAll(
+      String.fromCharCodes([226, 8218, 185]),
+      '\u20B9',
+    );
+    final extraSafeBottom =
+        bottomNavHeight > 0 ? 0.0 : MediaQuery.of(context).padding.bottom;
+
+    Future<void> openDetails() async {
+      await HapticFeedback.selectionClick();
+      if (!context.mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        barrierColor: Colors.black.withAlpha(120),
+        builder: (ctx) {
+          final cleanTags =
+              tagLabels.where((t) => t.trim().isNotEmpty).take(16).toList();
+          final providerName = (reel.providerName ?? 'Provider').trim();
+          final hasDesc = (reel.description ?? '').trim().isNotEmpty;
+          final hasPrice = cleanPriceLabel != null;
+
+          return SafeArea(
+            top: false,
+            child: DraggableScrollableSheet(
+              expand: false,
+              minChildSize: 0.30,
+              initialChildSize: 0.60,
+              maxChildSize: 0.92,
+              builder: (context, scrollController) {
+                Widget metaCard({
+                  required IconData icon,
+                  required String label,
+                  required String value,
+                  Color? valueColor,
+                }) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.bg,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x12000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              icon,
+                              color: AppColors.textSecondary,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  value,
+                                  style: TextStyle(
+                                    color: valueColor ?? AppColors.textPrimary,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.20,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: AppColors.border.withAlpha(160),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          _Avatar(url: reel.providerAvatar),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    providerName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 16,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                if (reel.providerIsVerified == true) ...[
+                                  const SizedBox(width: 6),
+                                  const Icon(
+                                    Icons.verified_rounded,
+                                    size: 18,
+                                    color: AppColors.accent,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(ctx).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: ListView(
+                        controller: scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        children: [
+                          Text(
+                            'Reel details',
+                            style: TextStyle(
+                              color: AppColors.textSecondary.withOpacity(0.9),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            reel.title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 20,
+                              letterSpacing: -0.2,
+                              height: 1.10,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          if (hasDesc) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              reel.description!.trim(),
+                              style: const TextStyle(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                          if (hasPrice || location.isNotEmpty)
+                            const SizedBox(height: 16),
+                          if (hasPrice)
+                            metaCard(
+                              icon: Icons.currency_rupee_rounded,
+                              label: 'Price (starting)',
+                              value:
+                                  '$cleanPriceLabel${reel.isBoosted ? '/unit' : ''}',
+                              valueColor: const Color(0xFFFF4D67),
+                            ),
+                          if (hasPrice && location.isNotEmpty)
+                            const SizedBox(height: 10),
+                          if (location.isNotEmpty)
+                            metaCard(
+                              icon: Icons.location_on_outlined,
+                              label: 'Location',
+                              value: location,
+                            ),
+                          if (cleanTags.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              padding:
+                                  const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.bg,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x12000000),
+                                    blurRadius: 18,
+                                    offset: Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Tags',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary
+                                          .withOpacity(0.95),
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 12,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: cleanTags
+                                        .map((t) => _SheetChip(text: t))
+                                        .toList(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  onProviderTap();
+                                },
+                                icon: const Icon(Icons.person_outline),
+                                label: const Text(
+                                  'View profile',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(48),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: () {
+                                  Navigator.of(ctx).pop();
+                                  onShareTap();
+                                },
+                                icon: const Icon(Icons.share_outlined),
+                                label: const Text(
+                                  'Share',
+                                  style: TextStyle(fontWeight: FontWeight.w900),
+                                ),
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(48),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        },
+      );
+    }
 
     const titleStyle = TextStyle(
       color: Colors.white,
@@ -1515,6 +1891,7 @@ class _ReelPage extends StatelessWidget {
               avatarUrl: reel.providerAvatar,
               verified: reel.providerIsVerified == true,
               isFollowed: isFollowed,
+              showFollowButton: showFollowButton,
               heroTag:
                   'reel_provider_avatar_${reel.providerId}_${reel.id.isNotEmpty ? reel.id : 'profile'}',
               onProviderTap: onProviderTap,
@@ -1522,144 +1899,140 @@ class _ReelPage extends StatelessWidget {
             ),
           ),
         Positioned(
-          right: 12,
-          bottom: bottomNavHeight + 120,
-          child: Column(
-            children: [
-              _SideButton(
-                icon: isLiked ? Icons.favorite : Icons.favorite_border,
-                label: _formatCount(likeCount),
-                onTap: onLikeTap,
-                iconColor: isLiked ? const Color(0xFFFF4D67) : Colors.white,
-              ),
-              const SizedBox(height: 10),
-              _SideButton(
-                icon: Icons.mode_comment_outlined,
-                label: _formatCount(commentCount),
-                onTap: onCommentTap,
-              ),
-              const SizedBox(height: 10),
-              _SideButton(
-                icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
-                label: '',
-                onTap: onSaveTap,
-              ),
-              const SizedBox(height: 10),
-              _SideButton(
-                icon: muted ? Icons.volume_off : Icons.volume_up,
-                label: '',
-                onTap: onMuteTap,
-              ),
-              const SizedBox(height: 10),
-              _SideButton(
-                icon: Icons.share_outlined,
-                label: '',
-                onTap: onShareTap,
-              ),
-            ],
-          ),
-        ),
-        Positioned(
           left: 12,
-          right: 96,
-          bottom: bottomNavHeight + 66,
-          child: SafeArea(
-            top: false,
+          right: 12,
+          bottom: bottomNavHeight + 12,
+          child: Padding(
+            padding: EdgeInsets.only(bottom: extraSafeBottom),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (priceLabel != null) ...[
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.28),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Colors.white.withOpacity(0.12)),
-                    ),
-                    child: Text(
-                      '$priceLabel${reel.isBoosted ? '/unit' : ''}',
-                      style: const TextStyle(
-                        color: Color(0xFFFF4D67),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black54,
-                            blurRadius: 12,
-                            offset: Offset(0, 4),
-                          )
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (cleanPriceLabel != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.28),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.12),
+                                ),
+                              ),
+                              child: Text(
+                                '$cleanPriceLabel${reel.isBoosted ? '/unit' : ''}',
+                                style: const TextStyle(
+                                  color: Color(0xFFFF4D67),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                          Text(
+                            reel.title,
+                            style: titleStyle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if ((reel.description ?? '').trim().isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            _ExpandableText(
+                              text: reel.description!.trim(),
+                              trimLines: 1,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                                height: 1.20,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 10,
+                                    offset: Offset(0, 3),
+                                  )
+                                ],
+                              ),
+                              actionStyle: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black54,
+                                    blurRadius: 10,
+                                    offset: Offset(0, 3),
+                                  )
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                Text(
-                  reel.title,
-                  style: titleStyle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 12),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SideButton(
+                          icon:
+                              isLiked ? Icons.favorite : Icons.favorite_border,
+                          label: _formatCount(likeCount),
+                          onTap: onLikeTap,
+                          iconColor:
+                              isLiked ? const Color(0xFFFF4D67) : Colors.white,
+                        ),
+                        const SizedBox(height: 10),
+                        _SideButton(
+                          icon: Icons.mode_comment_outlined,
+                          label: _formatCount(commentCount),
+                          onTap: onCommentTap,
+                        ),
+                        const SizedBox(height: 10),
+                        _SideButton(
+                          icon:
+                              isSaved ? Icons.bookmark : Icons.bookmark_border,
+                          label: '',
+                          onTap: onSaveTap,
+                        ),
+                        const SizedBox(height: 10),
+                        _SideButton(
+                          icon: muted ? Icons.volume_off : Icons.volume_up,
+                          label: '',
+                          onTap: onMuteTap,
+                        ),
+                        const SizedBox(height: 10),
+                        _SideButton(
+                          icon: Icons.more_horiz_rounded,
+                          label: '',
+                          onTap: openDetails,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                if ((reel.description ?? '').trim().isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  _ExpandableText(
-                    text: reel.description!.trim(),
-                    trimLines: 1,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      height: 1.20,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black54,
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        )
-                      ],
+                if (showEnquiryComposer) ...[
+                  const SizedBox(height: 12),
+                  AnimatedPadding(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOut,
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
                     ),
-                    actionStyle: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black54,
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        )
-                      ],
-                    ),
-                  ),
-                ],
-                if (tagLabels.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: tagLabels
-                        .where((t) => t.trim().isNotEmpty)
-                        .take(2)
-                        .map((t) => _ChipLabel(text: t))
-                        .toList(),
-                  ),
-                ],
-                if (location.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    location,
-                    style: const TextStyle(
-                      color: Colors.white60,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black54,
-                          blurRadius: 12,
-                          offset: Offset(0, 4),
-                        )
-                      ],
+                    child: _EnquiryComposer(
+                      controller: enquiryController,
+                      focusNode: enquiryFocusNode,
+                      loading: enquirySending,
+                      onSend: onEnquirySend,
                     ),
                   ),
                 ],
@@ -1667,28 +2040,6 @@ class _ReelPage extends StatelessWidget {
             ),
           ),
         ),
-        if (showEnquiryComposer)
-          Positioned(
-            left: 12,
-            right: 96,
-            bottom: bottomNavHeight + 12,
-            child: SafeArea(
-              top: false,
-              child: AnimatedPadding(
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOut,
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                ),
-                child: _EnquiryComposer(
-                  controller: enquiryController,
-                  focusNode: enquiryFocusNode,
-                  loading: enquirySending,
-                  onSend: onEnquirySend,
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
@@ -2006,6 +2357,7 @@ class _ProviderHeader extends StatelessWidget {
   final String? avatarUrl;
   final bool verified;
   final bool isFollowed;
+  final bool showFollowButton;
   final String heroTag;
   final VoidCallback onProviderTap;
   final VoidCallback onFollowTap;
@@ -2015,6 +2367,7 @@ class _ProviderHeader extends StatelessWidget {
     required this.avatarUrl,
     required this.verified,
     required this.isFollowed,
+    required this.showFollowButton,
     required this.heroTag,
     required this.onProviderTap,
     required this.onFollowTap,
@@ -2107,27 +2460,29 @@ class _ProviderHeader extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
-            SizedBox(
-              height: 34,
-              child: FilledButton(
-                onPressed: onFollowTap,
-                style: FilledButton.styleFrom(
-                  backgroundColor:
-                      isFollowed ? Colors.white10 : const Color(0xFF5E60CE),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+            if (showFollowButton) ...[
+              const SizedBox(width: 10),
+              SizedBox(
+                height: 34,
+                child: FilledButton(
+                  onPressed: onFollowTap,
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        isFollowed ? Colors.white10 : const Color(0xFF5E60CE),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
-                ),
-                child: Text(
-                  isFollowed ? 'Following' : 'Follow',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: isFollowed ? Colors.white70 : Colors.white,
+                  child: Text(
+                    isFollowed ? 'Following' : 'Follow',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: isFollowed ? Colors.white70 : Colors.white,
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -2191,32 +2546,33 @@ class _GlassCard extends StatelessWidget {
   }
 }
 
-class _ChipLabel extends StatelessWidget {
+class _SheetChip extends StatelessWidget {
   final String text;
-  const _ChipLabel({required this.text});
+  const _SheetChip({required this.text});
 
   @override
   Widget build(BuildContext context) {
+    final base = AppColors.bg;
+    final tintA =
+        Color.alphaBlend(AppColors.accent.withAlpha(26), base.withAlpha(255));
+    final tintB = Color.alphaBlend(
+        AppColors.secondary.withAlpha(16), base.withAlpha(255));
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.22),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [tintA, tintB],
+        ),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withOpacity(0.10)),
       ),
       child: Text(
         text,
         style: const TextStyle(
-          color: Colors.white,
+          color: AppColors.textPrimary,
           fontSize: 12,
           fontWeight: FontWeight.w800,
-          shadows: [
-            Shadow(
-              color: Colors.black54,
-              blurRadius: 10,
-              offset: Offset(0, 3),
-            )
-          ],
         ),
       ),
     );

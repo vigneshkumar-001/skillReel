@@ -1,5 +1,7 @@
 import '../constants/api_constants.dart';
 import 'api_client.dart';
+import 'package:dio/dio.dart';
+import 'dart:typed_data';
 import 'models/app_bootstrap_model.dart';
 import 'models/app_me_model.dart';
 import 'models/my_provider_reels_model.dart';
@@ -30,11 +32,46 @@ class AppRepository {
   }
 
   Future<AppMeResponse> updateMyProfile(Map<String, dynamic> data) async {
-    final res = await _api.put(ApiConstants.appMeProfile, data: data);
+    // Backend expects multipart/form-data even for text-only profile updates.
+    final form = FormData.fromMap(data);
+    final res = await _api.putFormData(ApiConstants.appMeProfile, form);
     final root = res.data;
     if (root is! Map) {
       throw StateError(
           'Unexpected app/me/profile response: ${root.runtimeType}');
+    }
+    return AppMeResponse.fromJson(Map<String, dynamic>.from(root));
+  }
+
+  Future<AppMeResponse> updateMyProfileWithAvatar({
+    required Map<String, dynamic> data,
+    required Uint8List avatarBytes,
+    required String filename,
+  }) async {
+    final form = FormData.fromMap({
+      ...data,
+      'avatar': MultipartFile.fromBytes(avatarBytes, filename: filename),
+    });
+
+    Response res;
+    try {
+      // Preferred API: /app/me/profile
+      res = await _api.putFormData(ApiConstants.appMeProfile, form);
+    } on DioException catch (e) {
+      final code = e.response?.statusCode;
+      if (code == 404 || code == 405) {
+        // Legacy fallback: /a/me/profile
+        res = await _api.putFormData(ApiConstants.updateProfile, form);
+      } else {
+        rethrow;
+      }
+    }
+
+    final root = res.data;
+    if (root is! Map) {
+      throw StateError(
+        'Unexpected profile update response: ${root.runtimeType}',
+      );
     }
     return AppMeResponse.fromJson(Map<String, dynamic>.from(root));
   }

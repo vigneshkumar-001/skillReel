@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../repositories/auth_repository.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/notification_service.dart';
 
 final authRepoProvider = Provider((_) => AuthRepository());
 
@@ -18,6 +19,7 @@ class AuthActions {
     final model = await repo.verifyOtp(mobile, otp);
     await StorageService.instance.saveToken(model.token);
     await StorageService.instance.saveUserId(model.user.id);
+    await NotificationService.registerPushTokenIfAny();
     return model.user.role;
   }
 }

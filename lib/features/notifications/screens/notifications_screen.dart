@@ -1,70 +1,197 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/notification_provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import '../../../core/theme/app_colors.dart';
 
-class NotificationsScreen extends ConsumerWidget {
+import '../../../core/theme/app_colors.dart';
+import '../providers/notification_provider.dart';
+
+class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  bool _unreadOnly = false;
+
+  Future<void> _refresh() async {
+    ref.invalidate(notificationsProvider);
+    await ref.read(notificationsProvider.future);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final notifsAsync = ref.watch(notificationsProvider);
     return Scaffold(
+      backgroundColor: AppColors.bg,
       body: notifsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, __) => _NotificationsState(
+        error: (e, _) => _NotificationsState(
           icon: Icons.wifi_off_rounded,
-          title: 'Can’t load notifications',
+          title: "Can't load notifications",
           subtitle: 'Check your connection and try again.',
           actionLabel: 'Retry',
-          onAction: () => ref.refresh(notificationsProvider),
+          onAction: () => ref.invalidate(notificationsProvider),
         ),
         data: (notifs) {
-          return CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                pinned: true,
-                expandedHeight: 120,
-                backgroundColor: AppColors.bg,
-                surfaceTintColor: Colors.transparent,
-                elevation: 0,
-                titleSpacing: 16,
-                title: const Text(
-                  'Notifications',
-                  style: TextStyle(fontWeight: FontWeight.w900),
-                ),
-                flexibleSpace: FlexibleSpaceBar(
-                  background: CustomPaint(
-                    painter: _NotifHeaderPainter(),
-                    child: const SafeArea(bottom: false, child: SizedBox.expand()),
+          final items = _unreadOnly
+              ? notifs
+                  .where((n) => (n is Map) ? (n['isRead'] != true) : true)
+                  .toList(growable: false)
+              : notifs;
+
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverAppBar(
+                  pinned: true,
+                  expandedHeight: 132,
+                  backgroundColor: AppColors.bg,
+                  surfaceTintColor: Colors.transparent,
+                  elevation: 0,
+                  scrolledUnderElevation: 0,
+                  systemOverlayStyle: SystemUiOverlayStyle.dark,
+                  titleSpacing: 16,
+                  title: const Text(
+                    'Notifications',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: CustomPaint(
+                      painter: _NotifHeaderPainter(),
+                      child: SafeArea(
+                        bottom: false,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 74, 16, 0),
+                          child: Align(
+                            alignment: Alignment.bottomLeft,
+                            child: _NotifFilter(
+                              unreadOnly: _unreadOnly,
+                              onChanged: (v) => setState(() => _unreadOnly = v),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              if (notifs.isEmpty)
-                const SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _NotificationsState(
-                    icon: Icons.notifications_none_rounded,
-                    title: 'No updates yet',
-                    subtitle: 'Likes, comments, and alerts will show here.',
+                if (items.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _NotificationsState(
+                      icon: _unreadOnly
+                          ? Icons.mark_email_unread_rounded
+                          : Icons.notifications_none_rounded,
+                      title: _unreadOnly ? 'All caught up' : 'No updates yet',
+                      subtitle: _unreadOnly
+                          ? 'No unread notifications.'
+                          : 'Likes, comments, and alerts will show here.',
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                    sliver: SliverList.separated(
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (_, i) => _NotifCard(n: items[i]),
+                    ),
                   ),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
-                  sliver: SliverList.separated(
-                    itemCount: notifs.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) {
-                      final n = notifs[i];
-                      return _NotifCard(n: n);
-                    },
-                  ),
-                ),
-            ],
+              ],
+            ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _NotifFilter extends StatelessWidget {
+  final bool unreadOnly;
+  final ValueChanged<bool> onChanged;
+
+  const _NotifFilter({
+    required this.unreadOnly,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(235),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x16000000),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _FilterChipLike(
+            selected: !unreadOnly,
+            label: 'All',
+            onTap: () => onChanged(false),
+          ),
+          _FilterChipLike(
+            selected: unreadOnly,
+            label: 'Unread',
+            onTap: () => onChanged(true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChipLike extends StatelessWidget {
+  final bool selected;
+  final String label;
+  final VoidCallback onTap;
+
+  const _FilterChipLike({
+    required this.selected,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = selected ? Colors.white : AppColors.textPrimary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Material(
+        color: selected ? AppColors.textPrimary : Colors.transparent,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: fg,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../services/log.dart';
 import '../services/storage_service.dart';
 import '../../crashlytics_api_logger.dart';
+import 'api_callsite.dart';
 
 class ApiInterceptor extends Interceptor {
   static final _l = log.tag('Api');
@@ -16,6 +17,7 @@ class ApiInterceptor extends Interceptor {
     RequestInterceptorHandler handler,
   ) async {
     options.extra['__startTime'] = DateTime.now().toIso8601String();
+    options.extra['source'] ??= ApiCallsite.infer();
 
     final token = await StorageService.instance.getToken();
     if (token != null) {
@@ -28,9 +30,10 @@ class ApiInterceptor extends Interceptor {
       final headers = _ApiLog.sanitizedHeaders(options.headers);
       final tokenMasked = _ApiLog.maskedToken(token);
       final body = _ApiLog.stringifyBody(options.data);
+      final source = options.extra['source']?.toString();
 
-      _l.d(
-        'API REQUEST\n'
+      _l.i(
+        'API REQUEST (${source ?? '<unknown>'})\n'
         'url=$url\n'
         'method=$method\n'
         'headers=$headers\n'
@@ -52,9 +55,10 @@ class ApiInterceptor extends Interceptor {
       final headers = _ApiLog.sanitizedHeaders(response.headers.map);
       final durationMs = _ApiLog.durationMs(req);
       final body = _ApiLog.stringifyBody(response.data);
+      final source = req.extra['source']?.toString();
 
-      _l.d(
-        'API RESPONSE\n'
+      _l.i(
+        'API RESPONSE (${source ?? '<unknown>'})\n'
         'url=$url\n'
         'method=$method\n'
         'status=$status (${durationMs}ms)\n'
@@ -84,9 +88,10 @@ class ApiInterceptor extends Interceptor {
           : null;
       final resBody =
           err.response != null ? _ApiLog.stringifyBody(err.response!.data) : '';
+      final source = req.extra['source']?.toString();
 
       _l.w(
-        'API ERROR\n'
+        'API ERROR (${source ?? '<unknown>'})\n'
         'url=$url\n'
         'method=$method\n'
         'status=$status (${durationMs}ms)\n'
