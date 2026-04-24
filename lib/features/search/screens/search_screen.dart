@@ -772,7 +772,7 @@ class _ReelThumbTile extends StatelessWidget {
                             child: Icon(
                               Icons.favorite_rounded,
                               size: 16,
-                              color: Color(0xFFFF4D67),
+                              color: AppColors.accent,
                             ),
                           ),
                         if (reel.isSaved)

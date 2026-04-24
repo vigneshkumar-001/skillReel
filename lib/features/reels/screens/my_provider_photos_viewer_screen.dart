@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../profile/providers/my_provider_photos_provider.dart';
 import '../../../core/network/api_error_message.dart';
 import '../../../core/network/models/my_provider_photos_model.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/url_utils.dart';
 
 class MyProviderPhotosViewerScreen extends ConsumerStatefulWidget {
@@ -227,7 +228,7 @@ class _PhotoPage extends StatelessWidget {
                     const SizedBox(width: 10),
                     _StatPill(
                       icon: Icons.favorite_rounded,
-                      iconColor: const Color(0xFFFF4D67),
+                      iconColor: AppColors.accent,
                       label: '${_compact(item.likeCount)} likes',
                     ),
                   ],

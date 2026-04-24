@@ -919,60 +919,67 @@ class _AvailabilityPickerField extends StatelessWidget {
       borderSide: BorderSide(color: borderColor, width: 1),
     );
 
-    final value = controller.text.trim();
-    final display = value.isEmpty ? hint : value;
-    final color =
-        value.isEmpty ? AppColors.textSecondary.withAlpha(160) : AppColors.textPrimary;
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, v, _) {
+        final value = v.text.trim();
+        final display = value.isEmpty ? hint : value;
+        final color = value.isEmpty
+            ? AppColors.textSecondary.withAlpha(160)
+            : AppColors.textPrimary;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: AppColors.textSecondary.withAlpha(230),
-            fontWeight: FontWeight.w800,
-            fontSize: 12,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: () => _openPicker(context),
-            child: Ink(
-              decoration: ShapeDecoration(
-                color: fillColor,
-                shape: baseBorder,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: AppColors.textSecondary.withAlpha(230),
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
               ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        display,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: color,
+            ),
+            const SizedBox(height: 8),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => _openPicker(context),
+                child: Ink(
+                  decoration: ShapeDecoration(
+                    color: fillColor,
+                    shape: baseBorder,
+                  ),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            display,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: color,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 10),
+                        Icon(
+                          Icons.expand_more_rounded,
+                          color: AppColors.textSecondary.withAlpha(200),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    Icon(
-                      Icons.expand_more_rounded,
-                      color: AppColors.textSecondary.withAlpha(200),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }

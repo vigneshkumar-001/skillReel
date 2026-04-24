@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import '../constants/api_constants.dart';
@@ -125,6 +127,36 @@ class SocketService {
     // Legacy event.
     _socket?.on('new_message', handler);
   }
+
+  Future<dynamic> emitWithAck(
+    String event,
+    dynamic data, {
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    final sock = _socket;
+    if (sock == null) return null;
+    final completer = Completer<dynamic>();
+    final timer = Timer(timeout, () {
+      if (!completer.isCompleted) completer.complete(null);
+    });
+    try {
+      // socket_io_client supports ack callbacks.
+      sock.emitWithAck(
+        event,
+        data,
+        ack: (dynamic ack) {
+          if (!completer.isCompleted) completer.complete(ack);
+        },
+      );
+    } catch (e) {
+      if (!completer.isCompleted) completer.complete(null);
+    } finally {
+      completer.future.whenComplete(timer.cancel);
+    }
+    return completer.future;
+  }
+
+  void emit(String event, dynamic data) => _socket?.emit(event, data);
 
   void disconnect() => _socket?.disconnect();
 }

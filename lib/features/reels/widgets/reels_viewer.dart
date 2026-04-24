@@ -38,6 +38,7 @@ class ReelsViewer extends ConsumerStatefulWidget {
   final String title;
   final bool showTopBar;
   final String? initialReelId;
+  final String? initialHeroTag;
 
   const ReelsViewer({
     super.key,
@@ -51,6 +52,7 @@ class ReelsViewer extends ConsumerStatefulWidget {
     this.title = 'Discovery',
     this.showTopBar = true,
     this.initialReelId,
+    this.initialHeroTag,
   });
 
   @override
@@ -91,6 +93,33 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
       ReelsFeedConfig(type: widget.feedType, boostedOnly: widget.boostedOnly);
 
   String get _surface => (widget.interactionSurface ?? widget.feedType).trim();
+
+  String _currentReelId() {
+    final reels =
+        ref.read(reelsViewerControllerProvider(_config)).valueOrNull?.reels;
+    if (reels == null || reels.isEmpty) return '';
+    final idx = _index.clamp(0, reels.length - 1);
+    return reels[idx].id.trim();
+  }
+
+  void _pauseAllVideo({bool mute = true}) {
+    for (final c in _videoCtrls.values) {
+      if (mute) {
+        unawaited(c.setVolume(0));
+      }
+      unawaited(c.pause());
+    }
+  }
+
+  void _popWithResult() {
+    final id = _currentReelId();
+    if (!mounted) return;
+    if (id.isNotEmpty) {
+      context.pop(id);
+    } else {
+      context.pop();
+    }
+  }
 
   @override
   void initState() {
@@ -157,7 +186,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final route = ModalRoute.of(context);
-    if (!_routeSubscribed && route is PageRoute) {
+    if (!_routeSubscribed && route != null) {
       routeObserver.subscribe(this, route);
       _routeSubscribed = true;
     }
@@ -205,6 +234,8 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     routeObserver.unsubscribe(this);
+    // Best-effort immediate pause to avoid audio leaking during navigation.
+    _pauseAllVideo(mute: true);
     _leaveReelRoom();
     SocketService.instance.off('feed:reel:stats', _onReelStats);
     SocketService.instance.off('interaction:comment:new', _onCommentNew);
@@ -223,10 +254,16 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
   }
 
   @override
+  void deactivate() {
+    // Called when another route covers this widget (push) or it is removed
+    // during a tab/route switch. Ensure audio never continues in background.
+    _pauseAllVideo(mute: true);
+    super.deactivate();
+  }
+
+  @override
   void didPushNext() {
-    for (final c in _videoCtrls.values) {
-      c.pause();
-    }
+    _pauseAllVideo(mute: true);
   }
 
   @override
@@ -244,9 +281,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden) {
-      for (final c in _videoCtrls.values) {
-        c.pause();
-      }
+      _pauseAllVideo(mute: true);
     }
   }
 
@@ -548,6 +583,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
   }
 
   void _doubleTapLike(ReelModel reel) {
+    HapticFeedback.lightImpact();
     final id = reel.id;
     if (id.isNotEmpty) {
       final wasLiked = _likedReelIds.contains(id);
@@ -890,12 +926,21 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
 
       final title = _firstNonEmpty([reel.providerName, 'Chat']).trim();
       if (!mounted) return;
+      final localId = Uri.encodeComponent('local_${reel.providerId}_${reel.id}');
       context.push(
-        '/chat/local_${reel.providerId}_${reel.id}',
+        '/chat/$localId',
         extra: ChatHeader(
           title: title,
           subtitle: null,
           avatarUrl: reel.providerAvatar,
+          contextTag: 'Enquiry',
+          contextTitle: reel.title,
+          contextImageUrl: reel.thumbnailUrl.isNotEmpty
+              ? reel.thumbnailUrl
+              : (reel.mediaUrl.isNotEmpty
+                  ? reel.mediaUrl
+                  : (reel.mediaUrls.isNotEmpty ? reel.mediaUrls.first : null)),
+          enquiryPreview: msg,
         ),
       );
       return;
@@ -937,12 +982,21 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
       final phone = _pickPhone(data);
 
       if (!mounted) return;
+      final encoded = Uri.encodeComponent(threadId);
       context.push(
-        '/chat/$threadId',
+        '/chat/$encoded',
         extra: ChatHeader(
           title: title,
           subtitle: phone,
           avatarUrl: reel.providerAvatar,
+          contextTag: 'Enquiry',
+          contextTitle: reel.title,
+          contextImageUrl: reel.thumbnailUrl.isNotEmpty
+              ? reel.thumbnailUrl
+              : (reel.mediaUrl.isNotEmpty
+                  ? reel.mediaUrl
+                  : (reel.mediaUrls.isNotEmpty ? reel.mediaUrls.first : null)),
+          enquiryPreview: msg,
         ),
       );
     } catch (e) {
@@ -1221,6 +1275,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
                       stats?.commentCount ?? (reel.comments + localComments);
                   final bottomNavHeight = _bottomNavHeight(context);
                   final isOwnReel = reel.isOwnReel == true;
+                  final mediaHeroTag = (widget.initialHeroTag ?? '').trim();
                   return _ReelPage(
                     key: ValueKey(reel.id.isNotEmpty ? reel.id : reel.mediaUrl),
                     reel: reel,
@@ -1254,6 +1309,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
                     },
                     onShareTap: () => _shareReel(reel),
                     onProviderTap: () {
+                      _pauseAllVideo(mute: true);
                       if (isOwnReel) {
                         context.push('/profile/view');
                         return;
@@ -1272,6 +1328,13 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
                     showProviderHeader: showProviderHeader,
                     showFollowButton: !isOwnReel,
                     showEnquiryComposer: showEnquiryComposer,
+                    mediaHeroTag: (widget.initialReelId ?? '')
+                                .trim()
+                                .isNotEmpty &&
+                            reel.id == (widget.initialReelId ?? '').trim() &&
+                            mediaHeroTag.isNotEmpty
+                        ? mediaHeroTag
+                        : null,
                   );
                 },
               ),
@@ -1333,7 +1396,14 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
 
     if (widget.embed) return ColoredBox(color: Colors.black, child: content);
 
-    return Scaffold(backgroundColor: Colors.black, body: content);
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _popWithResult();
+      },
+      child: Scaffold(backgroundColor: Colors.black, body: content),
+    );
   }
 }
 
@@ -1455,6 +1525,7 @@ class _ReelPage extends StatelessWidget {
   final bool showProviderHeader;
   final bool showFollowButton;
   final bool showEnquiryComposer;
+  final String? mediaHeroTag;
 
   const _ReelPage({
     super.key,
@@ -1487,6 +1558,7 @@ class _ReelPage extends StatelessWidget {
     required this.showProviderHeader,
     required this.showFollowButton,
     required this.showEnquiryComposer,
+    this.mediaHeroTag,
   });
 
   @override
@@ -1700,7 +1772,7 @@ class _ReelPage extends StatelessWidget {
                               label: 'Price (starting)',
                               value:
                                   '$cleanPriceLabel${reel.isBoosted ? '/unit' : ''}',
-                              valueColor: const Color(0xFFFF4D67),
+                              valueColor: AppColors.accent,
                             ),
                           if (hasPrice && location.isNotEmpty)
                             const SizedBox(height: 10),
@@ -1830,7 +1902,12 @@ class _ReelPage extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             onTap: onMediaTap,
             onDoubleTap: onMediaDoubleTap,
-            child: _ReelMedia(reel: reel, video: video),
+            child: (mediaHeroTag ?? '').trim().isEmpty
+                ? _ReelMedia(reel: reel, video: video)
+                : Hero(
+                    tag: mediaHeroTag!,
+                    child: _ReelMedia(reel: reel, video: video),
+                  ),
           ),
         ),
         Positioned.fill(
@@ -1873,9 +1950,14 @@ class _ReelPage extends StatelessWidget {
           ),
         ),
         if (paused)
-          const Center(
-            child:
-                Icon(Icons.play_arrow_rounded, color: Colors.white, size: 96),
+          const IgnorePointer(
+            child: Center(
+              child: Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 96,
+              ),
+            ),
           ),
         if (showHeart)
           Center(
@@ -1931,7 +2013,7 @@ class _ReelPage extends StatelessWidget {
                               child: Text(
                                 '$cleanPriceLabel${reel.isBoosted ? '/unit' : ''}',
                                 style: const TextStyle(
-                                  color: Color(0xFFFF4D67),
+                                  color: AppColors.accent,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -1989,7 +2071,7 @@ class _ReelPage extends StatelessWidget {
                           label: _formatCount(likeCount),
                           onTap: onLikeTap,
                           iconColor:
-                              isLiked ? const Color(0xFFFF4D67) : Colors.white,
+                              isLiked ? AppColors.accent : Colors.white,
                         ),
                         const SizedBox(height: 10),
                         _SideButton(
@@ -2940,7 +3022,7 @@ class _BigHeartState extends State<_BigHeart>
         scale: _scale,
         child: ShaderMask(
           shaderCallback: (rect) => const LinearGradient(
-            colors: [Color(0xFFFF4D67), Color(0xFFB76DFF)],
+            colors: [AppColors.accent, AppColors.secondary],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ).createShader(rect),

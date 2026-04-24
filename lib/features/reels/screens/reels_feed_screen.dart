@@ -3,15 +3,20 @@ import 'package:flutter/material.dart';
 import '../widgets/reels_viewer.dart';
 
 class ReelsFeedScreen extends StatelessWidget {
-  const ReelsFeedScreen({super.key});
+  final String? initialReelId;
+  final String? heroTag;
+
+  const ReelsFeedScreen({super.key, this.initialReelId, this.heroTag});
 
   @override
   Widget build(BuildContext context) {
-    return const ReelsViewer(
+    return ReelsViewer(
       showUploadButton: false,
       showNotificationsButton: false,
       feedType: 'trending',
       showTopBar: false,
+      initialReelId: initialReelId,
+      initialHeroTag: heroTag,
     );
   }
 }

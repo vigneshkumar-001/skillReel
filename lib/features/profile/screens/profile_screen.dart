@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/my_provider_photos_provider.dart';
 import '../providers/my_provider_reels_provider.dart';
@@ -17,9 +18,14 @@ import '../../../core/network/models/my_provider_photos_model.dart';
 import '../../../core/network/models/my_provider_reels_model.dart';
 import '../../../core/network/models/my_saved_reels_model.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/socket_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../../core/network/api_error_message.dart';
 import '../../../core/utils/url_utils.dart';
+import '../../chat/providers/chat_provider.dart';
+import '../../notifications/providers/notification_provider.dart';
+import '../../reels/providers/reels_viewer_provider.dart';
+import '../../search/providers/search_provider.dart';
 
 enum _MyProfileSection {
   about,
@@ -85,7 +91,7 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _PremiumProfileView extends StatelessWidget {
+class _PremiumProfileView extends ConsumerWidget {
   final Map user;
   final bool isPreview;
   const _PremiumProfileView({required this.user, this.isPreview = false});
@@ -101,7 +107,7 @@ class _PremiumProfileView extends StatelessWidget {
     return fallback;
   }
 
-  void _openMenu(BuildContext context) {
+  void _openMenu(BuildContext context, WidgetRef ref) {
     final rootContext = context;
     final raw = user['isProvider'];
     final isProvider = raw == true ||
@@ -205,6 +211,19 @@ class _PremiumProfileView extends StatelessWidget {
                             final ok = await _confirmLogout(rootContext);
                             if (!ok) return;
                             await StorageService.instance.clear();
+                            SocketService.instance.disconnect();
+                            ref.invalidate(myProfileProvider);
+                            ref.invalidate(notificationsProvider);
+                            ref.invalidate(searchCategoriesProvider);
+                            ref.invalidate(threadsProvider);
+                            ref.invalidate(myProviderReelsProvider);
+                            ref.invalidate(myProviderPhotosProvider);
+                            ref.invalidate(mySavedReelsProvider);
+                            ref.invalidate(
+                              reelsViewerControllerProvider(
+                                const ReelsFeedConfig(type: 'trending'),
+                              ),
+                            );
                             if (rootContext.mounted) {
                               rootContext.go('/auth/otp');
                             }
@@ -380,7 +399,7 @@ class _PremiumProfileView extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final avatarUrl = UrlUtils.normalizeMediaUrl(user['avatar']?.toString());
     final name = (user['name'] ?? 'Your Name').toString();
     final headline = (user['headline'] ?? '').toString().trim();
@@ -421,7 +440,7 @@ class _PremiumProfileView extends StatelessWidget {
       posts: posts,
       likes: _count(const ['likesCount', 'likes', 'likeCount'], 234000),
       enquiries: enquiries,
-      onOpenMenu: () => _openMenu(context),
+      onOpenMenu: () => _openMenu(context, ref),
     );
   }
 }
@@ -1715,6 +1734,24 @@ class _MyAboutSection extends StatelessWidget {
       return 'https://$s';
     }
 
+    Future<void> openWebsite(String raw) async {
+      final url = websiteForCopy(raw);
+      final uri = Uri.tryParse(url);
+      if (uri == null) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid website URL')),
+        );
+        return;
+      }
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open website')),
+        );
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1786,17 +1823,18 @@ class _MyAboutSection extends StatelessWidget {
                           value: displayWebsite(websiteTrim),
                           onTap: () async {
                             HapticFeedback.selectionClick();
+                            await openWebsite(websiteTrim);
+                          },
+                          onLongPress: () async {
+                            HapticFeedback.selectionClick();
                             final value = websiteForCopy(websiteTrim);
-                            await Clipboard.setData(
-                              ClipboardData(text: value),
-                            );
+                            await Clipboard.setData(ClipboardData(text: value));
                             if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Website copied'),
-                              ),
+                              const SnackBar(content: Text('Website copied')),
                             );
                           },
+                          trailingIcon: Icons.open_in_new_rounded,
                         ),
                     ],
                   ),
@@ -1815,12 +1853,16 @@ class _MyAboutInfoRow extends StatelessWidget {
   final String label;
   final String value;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final IconData trailingIcon;
 
   const _MyAboutInfoRow({
     required this.icon,
     required this.label,
     required this.value,
     required this.onTap,
+    this.onLongPress,
+    this.trailingIcon = Icons.copy_rounded,
   });
 
   @override
@@ -1829,6 +1871,7 @@ class _MyAboutInfoRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(18),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -1877,7 +1920,7 @@ class _MyAboutInfoRow extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Icon(
-                Icons.copy_rounded,
+                trailingIcon,
                 size: 18,
                 color: AppColors.textSecondary.withAlpha(190),
               ),
@@ -3240,7 +3283,7 @@ class _SavedReelTile extends StatelessWidget {
                           children: [
                             const Icon(
                               Icons.favorite_rounded,
-                              color: Color(0xFFFF4D67),
+                              color: AppColors.accent,
                               size: 14,
                             ),
                             const SizedBox(width: 6),
@@ -3434,7 +3477,7 @@ class _ProviderReelTile extends StatelessWidget {
                           children: [
                             const Icon(
                               Icons.favorite_rounded,
-                              color: Color(0xFFFF4D67),
+                              color: AppColors.accent,
                               size: 14,
                             ),
                             const SizedBox(width: 6),

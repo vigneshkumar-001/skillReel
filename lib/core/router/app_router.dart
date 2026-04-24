@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/screens/otp_request_screen.dart';
 import '../../features/auth/screens/otp_verify_screen.dart';
+import '../../features/auth/screens/signup_screen.dart';
 import '../../features/chat/models/chat_header.dart';
 import '../../features/chat/screens/chat_screen.dart';
 import '../../features/chat/screens/threads_screen.dart';
@@ -107,27 +108,37 @@ GoRouter createAppRouter() {
                 _slideFadePage(state, const HomeScreen()),
           ),
           GoRoute(
+            path: '/signup',
+            pageBuilder: (_, state) =>
+                _slideFadePage(state, const SignupScreen()),
+          ),
+          GoRoute(
             path: '/search',
             pageBuilder: (_, state) =>
                 _slideFadePage(state, const SearchScreen()),
           ),
-          GoRoute(path: '/reels', builder: (_, __) => const ReelsFeedScreen()),
+          GoRoute(
+            path: '/reels',
+            pageBuilder: (_, state) {
+              final extra = state.extra;
+              final initialReelId = (extra is Map)
+                  ? extra['initialReelId']?.toString()
+                  : (extra is String ? extra : null);
+              final heroTag =
+                  (extra is Map) ? extra['heroTag']?.toString() : null;
+              return _slideFadePage(
+                state,
+                ReelsFeedScreen(
+                  initialReelId: initialReelId,
+                  heroTag: heroTag,
+                ),
+              );
+            },
+          ),
           GoRoute(
             path: '/chats',
             pageBuilder: (_, state) =>
                 _slideFadePage(state, const ThreadsScreen()),
-          ),
-          GoRoute(
-            path: '/chat/:threadId',
-            pageBuilder: (_, state) => _slideFadePage(
-              state,
-              ChatScreen(
-                threadId: state.pathParameters['threadId']!,
-                header: state.extra is ChatHeader
-                    ? state.extra as ChatHeader
-                    : null,
-              ),
-            ),
           ),
           GoRoute(
             path: '/profile',
@@ -174,6 +185,16 @@ GoRouter createAppRouter() {
                 _slideFadePage(state, const SavedReelsScreen()),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/chat/:threadId',
+        pageBuilder: (_, state) => _slideFadePage(
+          state,
+          ChatScreen(
+            threadId: state.pathParameters['threadId']!,
+            header: state.extra is ChatHeader ? state.extra as ChatHeader : null,
+          ),
+        ),
       ),
       GoRoute(
         path: '/user/:id',

@@ -26,8 +26,13 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
     }
     setState(() => _loading = true);
     try {
-      await ref.read(authActionProvider).verifyOtp(widget.mobile, otp);
-      if (mounted) context.go('/home');
+      final model = await ref.read(authActionProvider).verifyOtp(
+            widget.mobile,
+            otp,
+          );
+      final needsSignup = (model.user.name ?? '').toString().trim().isEmpty;
+      if (!mounted) return;
+      context.go(needsSignup ? '/signup' : '/home');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)

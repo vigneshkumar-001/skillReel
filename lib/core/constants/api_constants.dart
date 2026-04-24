@@ -48,8 +48,8 @@ class ApiConstants {
   static const String enquiries = '/enquiries';
 
   // Chats
-  static const String threads = '/chats/threads';
-  static const String messages = '/chats/threads'; // + /:id/messages
+  static const String threads = '/app/social/chats/threads';
+  static const String messages = '/app/social/chats/threads'; // + /:id/messages
 
   // Follows
   static const String follows = '/follows'; // + /:providerId

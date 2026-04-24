@@ -219,7 +219,7 @@ class _SavedReelTile extends StatelessWidget {
                     children: [
                       const Icon(
                         Icons.favorite_rounded,
-                        color: Color(0xFFFF4D67),
+                        color: AppColors.accent,
                         size: 14,
                       ),
                       const SizedBox(width: 6),

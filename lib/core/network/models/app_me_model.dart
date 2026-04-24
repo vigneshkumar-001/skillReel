@@ -54,6 +54,7 @@ class AppMeUnifiedProfile {
   final String headline;
   final String bio;
   final String websiteUrl;
+  final String availability;
   final List<AppMeSkillLite> skills;
   final AppMeLocation location;
   final int serviceRadiusKm;
@@ -77,6 +78,7 @@ class AppMeUnifiedProfile {
     required this.headline,
     required this.bio,
     required this.websiteUrl,
+    required this.availability,
     required this.skills,
     required this.location,
     required this.serviceRadiusKm,
@@ -102,6 +104,7 @@ class AppMeUnifiedProfile {
       headline: (j['headline'] ?? '').toString(),
       bio: (j['bio'] ?? '').toString(),
       websiteUrl: (j['websiteUrl'] ?? '').toString(),
+      availability: (j['availability'] ?? j['availabilityText'] ?? '').toString(),
       skills: _asList(j['skills'])
           .map((e) => AppMeSkillLite.fromJson(_asMap(e)))
           .toList(growable: false),
@@ -173,6 +176,12 @@ class AppMeUnifiedProfile {
       bio: (provider['bio'] ?? user['bio'] ?? '').toString(),
       websiteUrl:
           (provider['websiteUrl'] ?? user['websiteUrl'] ?? '').toString(),
+      availability: (provider['availability'] ??
+              provider['availabilityText'] ??
+              user['availability'] ??
+              user['availabilityText'] ??
+              '')
+          .toString(),
       skills: skills,
       location: location,
       serviceRadiusKm: _asInt(provider['serviceRadiusKm']),
@@ -224,6 +233,7 @@ class AppMeUnifiedProfile {
       'headline': computedHeadline,
       'bio': bio,
       'websiteUrl': websiteUrl,
+      'availability': availability,
       'location': {
         'city': location.city,
         'state': location.state,
@@ -237,6 +247,7 @@ class AppMeUnifiedProfile {
       'provider': {
         'id': id,
         'displayName': displayName,
+        'availability': availability,
         'isVerified': verification.isVerified,
         'trustScore': verification.trustScore,
         'totalReviews': verification.totalReviews,

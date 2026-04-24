@@ -1,10 +1,13 @@
 ﻿import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/url_utils.dart';
@@ -14,6 +17,9 @@ import '../../../core/network/models/my_provider_photos_model.dart';
 import '../../../core/network/models/my_provider_reels_model.dart';
 import '../../interactions/repositories/interactions_repository.dart';
 import '../../reviews/repositories/review_repository.dart';
+import '../../chat/providers/chat_provider.dart';
+import '../../chat/models/chat_model.dart';
+import '../../chat/models/chat_header.dart';
 
 typedef UserProfileSeed = ({
   String name,
@@ -76,6 +82,52 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
   static const double _titleThreshold = 86;
 
+  String _readStr(Iterable<dynamic> candidates) {
+    for (final candidate in candidates) {
+      if (candidate == null) continue;
+      final value = candidate.toString().trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _normalizePhoneForDial(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return '';
+    var cleaned = s.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (cleaned.startsWith('+')) {
+      cleaned = '+${cleaned.substring(1).replaceAll('+', '')}';
+    } else {
+      cleaned = cleaned.replaceAll('+', '');
+    }
+    return cleaned;
+  }
+
+  Future<void> _openDialer(String rawPhone) async {
+    final phone = _normalizePhoneForDial(rawPhone);
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Phone number not available')),
+      );
+      return;
+    }
+
+    final uri = Uri(scheme: 'tel', path: phone);
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open dialer')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open dialer')),
+      );
+    }
+  }
+
   Future<void> _toggleFollow() async {
     final id = widget.providerId.trim();
     if (id.isEmpty) return;
@@ -125,6 +177,56 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     if (!mounted) return;
     if (submitted == true) {
       ref.invalidate(providerPublicOverviewProvider(providerId));
+    }
+  }
+
+  Future<void> _openChat({
+    required String providerId,
+    required String providerName,
+    required String profession,
+    required String avatarUrl,
+  }) async {
+    final id = providerId.trim();
+    if (id.isEmpty) return;
+
+    try {
+      final threads = await ref.read(chatRepoProvider).getThreads();
+      final existing = threads.cast<ThreadModel?>().firstWhere(
+            (t) => (t?.providerId.trim() ?? '') == id,
+            orElse: () => null,
+          );
+      final threadId = (existing?.id ?? '').trim();
+      if (!mounted) return;
+
+      if (threadId.isNotEmpty) {
+        final encoded = Uri.encodeComponent(threadId);
+        context.push(
+          '/chat/$encoded',
+          extra: ChatHeader(
+            title: providerName.trim().isEmpty ? 'Conversation' : providerName.trim(),
+            subtitle: profession.trim().isEmpty ? null : profession.trim(),
+            avatarUrl: avatarUrl.trim().isEmpty ? null : avatarUrl.trim(),
+          ),
+        );
+        return;
+      }
+
+      final draftThreadId = Uri.encodeComponent('draft_provider_$id');
+      context.push(
+        '/chat/$draftThreadId',
+        extra: ChatHeader(
+          title: providerName.trim().isEmpty ? 'Conversation' : providerName.trim(),
+          subtitle: profession.trim().isEmpty ? null : profession.trim(),
+          avatarUrl: avatarUrl.trim().isEmpty ? null : avatarUrl.trim(),
+          enquiryPreview: 'Start an enquiry to unlock chat',
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      context.go('/chats');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(apiErrorMessage(e))),
+      );
     }
   }
 
@@ -305,6 +407,19 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     );
 
     final headline = (apiProfile['headline'] ?? '').toString().trim();
+    final phone = _readStr([
+      apiProfile['mobile'],
+      apiProfile['mobileNumber'],
+      apiProfile['phone'],
+      apiProfile['phoneNumber'],
+      apiProfile['contact'],
+      apiProfile['contactNumber'],
+      profile['mobile'],
+      profile['mobileNumber'],
+      profile['phone'],
+      profile['phoneNumber'],
+      profile['contact'],
+    ]);
 
     final apiIsFollowing = viewer['isFollowing'] == true;
     if (!_didSeedFollowFromApi && widget.seed == null) {
@@ -464,6 +579,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                     ratingText:
                         avgRating <= 0 ? '5.0' : avgRating.toStringAsFixed(1),
                     customersText: followerCount > 0 ? '$followerCount+' : '150+',
+                    isFollowed: _isFollowed,
                     onBack: () {
                       HapticFeedback.selectionClick();
                       Navigator.of(context).maybePop();
@@ -473,6 +589,16 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Share coming soon')),
                       );
+                    },
+                    onFollowTap: _toggleFollow,
+                    onMessageTap: () {
+                      HapticFeedback.selectionClick();
+                      unawaited(_openChat(
+                        providerId: id,
+                        providerName: displayName,
+                        profession: profession,
+                        avatarUrl: avatarUrl,
+                      ));
                     },
                   ),
                 ),
@@ -511,15 +637,16 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                     nextAvailableText: _nextAvailableText(),
                     onChatTap: () {
                       HapticFeedback.selectionClick();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Chat coming soon')),
-                      );
+                      unawaited(_openChat(
+                        providerId: id,
+                        providerName: displayName,
+                        profession: profession,
+                        avatarUrl: avatarUrl,
+                      ));
                     },
                     onCallTap: () {
                       HapticFeedback.selectionClick();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Call coming soon')),
-                      );
+                      unawaited(_openDialer(phone));
                     },
                   ),
                 ),
@@ -1111,8 +1238,11 @@ class HeroProfileWithStatsSection extends StatelessWidget {
   final String hourlyLabel;
   final String ratingText;
   final String customersText;
+  final bool isFollowed;
   final VoidCallback onBack;
   final VoidCallback onShare;
+  final VoidCallback onFollowTap;
+  final VoidCallback onMessageTap;
 
   const HeroProfileWithStatsSection({
     super.key,
@@ -1123,8 +1253,11 @@ class HeroProfileWithStatsSection extends StatelessWidget {
     required this.hourlyLabel,
     required this.ratingText,
     required this.customersText,
+    required this.isFollowed,
     required this.onBack,
     required this.onShare,
+    required this.onFollowTap,
+    required this.onMessageTap,
   });
 
   @override
@@ -1315,6 +1448,27 @@ class HeroProfileWithStatsSection extends StatelessWidget {
                       ratingText: ratingText,
                       customersText: customersText,
                       height: 92,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _PillButton(
+                            label: isFollowed ? 'Following' : 'Follow',
+                            filled: !isFollowed,
+                            block: true,
+                            onTap: onFollowTap,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _PillButton(
+                            label: 'Message',
+                            block: true,
+                            onTap: onMessageTap,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 );
@@ -2806,26 +2960,14 @@ class _AboutReferenceSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(text: body),
-              const TextSpan(text: ' '),
-              const TextSpan(
-                text: 'Read More',
-                style: TextStyle(
-                  color: _UserProfilePalette.accent,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          maxLines: 4,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w700,
-            height: 1.35,
+        _PremiumCard(
+          child: Text(
+            body,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
           ),
         ),
       ],

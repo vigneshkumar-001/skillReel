@@ -64,6 +64,8 @@ class MainShell extends ConsumerWidget {
     final idx = _currentIndex(context).clamp(0, 4);
     final loc = GoRouterState.of(context).uri.toString();
     final isFullScreenRoute = loc.startsWith('/chat/') ||
+        loc.startsWith('/reels') ||
+        loc.startsWith('/signup') ||
         loc.startsWith('/user/') ||
         loc.startsWith('/provider/') ||
         loc.startsWith('/profile/view') ||
@@ -162,7 +164,7 @@ class MainShell extends ConsumerWidget {
                                   height: 1, color: Color(0xFFF1F5F9)),
                               _CreateOption(
                                 icon: Icons.file_upload_outlined,
-                                tint: const Color(0xFFFF4D67),
+                                tint: AppColors.accent,
                                 title: 'Upload a Video',
                                 onTap: () {
                                   HapticFeedback.selectionClick();
@@ -172,7 +174,7 @@ class MainShell extends ConsumerWidget {
                               ),
                               _CreateOption(
                                 icon: Icons.image_outlined,
-                                tint: const Color(0xFFFF4D67),
+                                tint: AppColors.accent,
                                 title: 'Upload an Image',
                                 onTap: () {
                                   HapticFeedback.selectionClick();
