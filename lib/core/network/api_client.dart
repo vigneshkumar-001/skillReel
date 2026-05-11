@@ -34,9 +34,28 @@ class ApiClient {
 
   Map<String, dynamic> _callsiteExtra() {
     if (!kDebugMode) return const <String, dynamic>{};
-    final source = ApiCallsite.infer(stackTrace: StackTrace.current);
-    if (source == null || source.isEmpty) return const <String, dynamic>{};
-    return <String, dynamic>{'source': source};
+    final st = StackTrace.current;
+    final source = ApiCallsite.infer(stackTrace: st);
+    final stack = ApiCallsite.stackSnippet(stackTrace: st, maxFrames: 2);
+    final out = <String, dynamic>{};
+    if (source != null && source.isNotEmpty) out['source'] = source;
+    if (stack.isNotEmpty) out['stack'] = stack;
+    return out;
+  }
+
+  /// Merges the current callsite into `options.extra` (debug only), plus any
+  /// extra values you supply (e.g. `{'screen': 'Foo'}`).
+  Options optionsWithExtra({
+    Options? options,
+    Map<String, dynamic>? extra,
+  }) {
+    final merged = <String, dynamic>{};
+    if (options?.extra != null) merged.addAll(options!.extra!);
+    merged.addAll(_callsiteExtra());
+    if (extra != null) merged.addAll(extra);
+
+    if (options == null) return Options(extra: merged);
+    return options.copyWith(extra: merged);
   }
 
   Future<Response> get(String path, {Map<String, dynamic>? params}) => _wrap(

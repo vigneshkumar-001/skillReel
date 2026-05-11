@@ -39,7 +39,9 @@ class InteractionsRepository {
       final res = await api.dio.post(
         ApiConstants.interactions,
         data: body,
-        options: Options(extra: {'screen': screen ?? 'Interactions'}),
+        options: api.optionsWithExtra(
+          extra: {'screen': screen ?? 'Interactions'},
+        ),
       );
       final root = res.data;
       if (root is Map) {

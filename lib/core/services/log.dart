@@ -18,7 +18,10 @@ class AppLog {
             lineLength: 120,
             colors: true,
             printEmojis: false,
-            dateTimeFormat: lg.DateTimeFormat.onlyTimeAndSinceStart,
+            // Hide the leading time line like "16:50:14.309 (+0:...)" so logs
+            // look closer to typical Flutter debug output, and keep the
+            // callsite/stack frames as the primary navigation targets.
+            dateTimeFormat: lg.DateTimeFormat.none,
           ),
         );
 

@@ -5,8 +5,6 @@ import '../repositories/enquiry_repository.dart';
 import '../../../core/network/api_error_message.dart';
 import '../../../core/widgets/app_button.dart';
 
-final _enquiryRepoProvider = Provider((_) => EnquiryRepository());
-
 class EnquiryFormScreen extends ConsumerStatefulWidget {
   final String providerId;
   const EnquiryFormScreen({super.key, required this.providerId});
@@ -23,9 +21,10 @@ class _EnquiryFormScreenState extends ConsumerState<EnquiryFormScreen> {
     if (_ctrl.text.trim().isEmpty) return;
     setState(() => _loading = true);
     try {
-      await ref.read(_enquiryRepoProvider).createEnquiry(
-            widget.providerId,
-            _ctrl.text.trim(),
+      await ref.read(enquiryRepoProvider).createEnquiry(
+            providerId: widget.providerId,
+            message: _ctrl.text.trim(),
+            screen: 'EnquiryForm',
           );
       if (mounted) {
         ScaffoldMessenger.of(context)

@@ -3,7 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_state_provider.dart';
 import '../../../core/network/api_error_message.dart';
+import '../../../core/services/socket_service.dart';
 import '../../../core/widgets/app_button.dart';
+import '../../chat/providers/chat_provider.dart';
+import '../../notifications/providers/notification_provider.dart';
+import '../../profile/providers/my_provider_photos_provider.dart';
+import '../../profile/providers/my_provider_reels_provider.dart';
+import '../../profile/providers/my_saved_reels_provider.dart';
+import '../../profile/providers/profile_provider.dart';
+import '../../reels/providers/reels_viewer_provider.dart';
+import '../../search/providers/search_provider.dart';
 
 class OtpVerifyScreen extends ConsumerStatefulWidget {
   final String mobile;
@@ -30,6 +39,20 @@ class _OtpVerifyScreenState extends ConsumerState<OtpVerifyScreen> {
             widget.mobile,
             otp,
           );
+
+      // Token/user changed - ensure we don't show previous-account cached data.
+      SocketService.instance.disconnect();
+      ref.invalidate(myProfileProvider);
+      ref.invalidate(notificationsProvider);
+      ref.invalidate(searchCategoriesProvider);
+      ref.invalidate(threadsProvider);
+      ref.invalidate(myProviderReelsProvider);
+      ref.invalidate(myProviderPhotosProvider);
+      ref.invalidate(mySavedReelsProvider);
+      ref.invalidate(
+        reelsViewerControllerProvider(const ReelsFeedConfig(type: 'trending')),
+      );
+
       final needsSignup = (model.user.name ?? '').toString().trim().isEmpty;
       if (!mounted) return;
       context.go(needsSignup ? '/signup' : '/home');

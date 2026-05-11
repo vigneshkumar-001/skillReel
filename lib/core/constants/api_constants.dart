@@ -45,7 +45,7 @@ class ApiConstants {
   static const String searchReelsByCategory = '/app/discover/search/reels';
 
   // Enquiries
-  static const String enquiries = '/enquiries';
+  static const String enquiries = '/app/social/enquiries';
 
   // Chats
   static const String threads = '/app/social/chats/threads';

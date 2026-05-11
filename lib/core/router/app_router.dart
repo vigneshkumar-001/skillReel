@@ -9,6 +9,7 @@ import '../../features/chat/screens/chat_screen.dart';
 import '../../features/chat/screens/threads_screen.dart';
 import '../../features/enquiries/screens/enquiry_form_screen.dart';
 import '../../features/enquiries/screens/my_enquiries_screen.dart';
+import '../../features/enquiries/screens/enquiry_chat_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/notifications/screens/notifications_screen.dart';
 import '../../features/profile/screens/edit_profile_screen.dart';
@@ -192,7 +193,19 @@ GoRouter createAppRouter() {
           state,
           ChatScreen(
             threadId: state.pathParameters['threadId']!,
-            header: state.extra is ChatHeader ? state.extra as ChatHeader : null,
+            header:
+                state.extra is ChatHeader ? state.extra as ChatHeader : null,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/enquiry/chat/:threadId',
+        pageBuilder: (_, state) => _slideFadePage(
+          state,
+          EnquiryChatScreen(
+            threadId: state.pathParameters['threadId']!,
+            header:
+                state.extra is ChatHeader ? state.extra as ChatHeader : null,
           ),
         ),
       ),

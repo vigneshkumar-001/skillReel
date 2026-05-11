@@ -18,6 +18,7 @@ import '../services/reels_playback_prefs.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/socket_service.dart';
 import '../../interactions/repositories/interactions_repository.dart';
+import '../../enquiries/repositories/enquiry_repository.dart';
 import '../../chat/models/chat_header.dart';
 import '../../skills/providers/skills_provider.dart';
 import '../../profile/providers/my_saved_reels_provider.dart';
@@ -61,7 +62,7 @@ class ReelsViewer extends ConsumerStatefulWidget {
 
 class _ReelsViewerState extends ConsumerState<ReelsViewer>
     with WidgetsBindingObserver, RouteAware {
-  static const bool _skipEnquiryApiForNow = true;
+  static const bool _skipEnquiryApiForNow = false;
   final _pageController = PageController();
   final _videoCtrls = <int, VideoPlayerController>{};
   final _videoUrlByIndex = <int, String>{};
@@ -926,9 +927,10 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
 
       final title = _firstNonEmpty([reel.providerName, 'Chat']).trim();
       if (!mounted) return;
-      final localId = Uri.encodeComponent('local_${reel.providerId}_${reel.id}');
+      final localId =
+          Uri.encodeComponent('local_${reel.providerId}_${reel.id}');
       context.push(
-        '/chat/$localId',
+        '/enquiry/chat/$localId',
         extra: ChatHeader(
           title: title,
           subtitle: null,
@@ -948,12 +950,10 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
 
     setState(() => _enquirySendingReelIds.add(reel.id));
     try {
-      final root = await ref.read(interactionsRepoProvider).postInteraction(
-            action: 'enquiry',
+      final root = await ref.read(enquiryRepoProvider).createEnquiry(
             providerId: reel.providerId,
             reelId: reel.id,
             message: msg,
-            surface: _surface,
             screen: 'ReelsViewer',
           );
 
@@ -984,7 +984,7 @@ class _ReelsViewerState extends ConsumerState<ReelsViewer>
       if (!mounted) return;
       final encoded = Uri.encodeComponent(threadId);
       context.push(
-        '/chat/$encoded',
+        '/enquiry/chat/$encoded',
         extra: ChatHeader(
           title: title,
           subtitle: phone,
@@ -2070,8 +2070,7 @@ class _ReelPage extends StatelessWidget {
                               isLiked ? Icons.favorite : Icons.favorite_border,
                           label: _formatCount(likeCount),
                           onTap: onLikeTap,
-                          iconColor:
-                              isLiked ? AppColors.accent : Colors.white,
+                          iconColor: isLiked ? AppColors.accent : Colors.white,
                         ),
                         const SizedBox(height: 10),
                         _SideButton(

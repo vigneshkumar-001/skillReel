@@ -28,16 +28,21 @@ class ApiInterceptor extends Interceptor {
       final url = options.uri.toString();
       final method = options.method;
       final headers = _ApiLog.sanitizedHeaders(options.headers);
-      final tokenMasked = _ApiLog.maskedToken(token);
+      final tokenLog = _ApiLog.formatToken(token);
       final body = _ApiLog.stringifyBody(options.data);
       final source = options.extra['source']?.toString();
+      final stack = options.extra['stack']?.toString();
+      final stackLine =
+          (stack != null && stack.trim().isNotEmpty) ? 'stack:\n$stack\n' : '';
 
       _l.i(
         'API REQUEST (${source ?? '<unknown>'})\n'
-        'url=$url\n'
+        'FULL URL: $url\n'
         'method=$method\n'
         'headers=$headers\n'
-        'token=$tokenMasked\n'
+        'callsite=${source ?? '<unknown>'}\n'
+        '$stackLine'
+        'token=$tokenLog\n'
         'body=$body',
       );
     }
@@ -56,13 +61,21 @@ class ApiInterceptor extends Interceptor {
       final durationMs = _ApiLog.durationMs(req);
       final body = _ApiLog.stringifyBody(response.data);
       final source = req.extra['source']?.toString();
+      final stack = req.extra['stack']?.toString();
+      final tokenLog =
+          _ApiLog.formatToken(req.headers['Authorization']?.toString());
+      final stackLine =
+          (stack != null && stack.trim().isNotEmpty) ? 'stack:\n$stack\n' : '';
 
       _l.i(
         'API RESPONSE (${source ?? '<unknown>'})\n'
-        'url=$url\n'
+        'FULL URL: $url\n'
         'method=$method\n'
         'status=$status (${durationMs}ms)\n'
         'headers=$headers\n'
+        'callsite=${source ?? '<unknown>'}\n'
+        '$stackLine'
+        'token=$tokenLog\n'
         'response=$body',
       );
     }
@@ -89,14 +102,22 @@ class ApiInterceptor extends Interceptor {
       final resBody =
           err.response != null ? _ApiLog.stringifyBody(err.response!.data) : '';
       final source = req.extra['source']?.toString();
+      final stack = req.extra['stack']?.toString();
+      final tokenLog =
+          _ApiLog.formatToken(req.headers['Authorization']?.toString());
+      final stackLine =
+          (stack != null && stack.trim().isNotEmpty) ? 'stack:\n$stack\n' : '';
 
       _l.w(
         'API ERROR (${source ?? '<unknown>'})\n'
-        'url=$url\n'
+        'FULL URL: $url\n'
         'method=$method\n'
         'status=$status (${durationMs}ms)\n'
         'error=${err.type} ${err.message}\n'
         'headers=${resHeaders ?? '<null>'}\n'
+        'callsite=${source ?? '<unknown>'}\n'
+        '$stackLine'
+        'token=$tokenLog\n'
         'response=${resBody.isNotEmpty ? resBody : '<empty>'}',
       );
     }
@@ -112,12 +133,30 @@ class ApiInterceptor extends Interceptor {
 
 class _ApiLog {
   static const int _maxChars = 4000;
+  static const bool logFullTokenInDebug = true;
 
-  static String maskedToken(String? token) {
-    if (token == null || token.isEmpty) return '<null>';
-    if (token.length <= 12) return '***';
-    final start = token.substring(0, 6);
-    final end = token.substring(token.length - 4);
+  static String formatToken(String? token) {
+    final t = _normalizeBearerToken(token);
+    if (t.isEmpty) return '<null>';
+    if (logFullTokenInDebug) return t;
+    return maskedToken(t);
+  }
+
+  static String _normalizeBearerToken(String? token) {
+    final raw = (token ?? '').trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('Bearer ')) {
+      return raw.substring('Bearer '.length).trim();
+    }
+    return raw;
+  }
+
+  static String maskedToken(String token) {
+    final t = token.trim();
+    if (t.isEmpty) return '<null>';
+    if (t.length <= 12) return '***';
+    final start = t.substring(0, 6);
+    final end = t.substring(t.length - 4);
     return '$start...$end';
   }
 
